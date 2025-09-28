@@ -18,6 +18,7 @@
 #include "common.cu"
 
 #include "shaders/lambert.cu"
+#include "shaders/specular.cu"
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
@@ -218,8 +219,63 @@ __global__ void advancePathSegments(int num_paths, PathSegment* paths, Shadeable
     }
 }
 
+__global__ void shadePath(
+    int iter,
+    int num_paths,
+    ShadeableIntersection* shadeableIntersections,
+    PathSegment* pathSegments,
+    Material* materials,
+    int depth
+)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_paths)
+    {
+        ShadeableIntersection &intersection = shadeableIntersections[idx];
+        PathSegment &path = pathSegments[idx];
+        if (intersection.t > 0.0f) // if the intersection exists...
+        {
+            thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+            thrust::uniform_real_distribution<float> u01(0, 1);
+
+            Material &material = materials[intersection.materialId];
+            glm::vec3 materialColor = material.color;
+
+            if (material.material_type == MaterialType::Emissive) {
+                path.color += path.throughput * material.emittance * material.color;
+            } 
+            else if (material.material_type == MaterialType::Diffuse) {
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
+            } 
+            else if (material.material_type == MaterialType::Specular) {
+                PerfectSpecular::shadePathSpecular(path, material);
+            }
+        }
+    }
+}  
 
 
+__global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* paths, ShadeableIntersection *intersections, Material *materials) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_paths)
+    {
+        return;
+    }
+
+    ShadeableIntersection &intersection = intersections[idx];
+    PathSegment &path = paths[idx];
+
+    if (intersection.t > 0.0f)
+    {
+        Material &material = materials[intersection.materialId];
+        if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
+            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection);
+        } 
+        else if (material.material_type == MaterialType::Specular) {
+            PerfectSpecular::sampleMirror(path, intersection);
+        }
+    }
+}
 
 
 // Add the current iteration's output to the overall image
@@ -261,37 +317,6 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // 1D block for path tracing
     const int blockSize1d = 128;
 
-    ///////////////////////////////////////////////////////////////////////////
-
-    // Recap:
-    // * Initialize array of path rays (using rays that come out of the camera)
-    //   * You can pass the Camera object to that kernel.
-    //   * Each path ray must carry at minimum a (ray, color) pair,
-    //   * where color starts as the multiplicative identity, white = (1, 1, 1).
-    //   * This has already been done for you.
-    // * For each depth:
-    //   * Compute an intersection in the scene for each path ray.
-    //     A very naive version of this has been implemented for you, but feel
-    //     free to add more primitives and/or a better algorithm.
-    //     Currently, intersection distance is recorded as a parametric distance,
-    //     t, or a "distance along the ray." t = -1.0 indicates no intersection.
-    //     * Color is attenuated (multiplied) by reflections off of any object
-    //   * TODO: Stream compact away all of the terminated paths.
-    //     You may use either your implementation or `thrust::remove_if` or its
-    //     cousins.
-    //     * Note that you can't really use a 2D kernel launch any more - switch
-    //       to 1D.
-    //   * TODO: Shade the rays that intersected something or didn't bottom out.
-    //     That is, color the ray by performing a color computation according
-    //     to the shader, then generate a new ray to continue the ray path.
-    //     We recommend just updating the ray's PathSegment in place.
-    //     Note that this step may come before or after stream compaction,
-    //     since some shaders you write may also cause a path to terminate.
-    // * Finally, add this iteration's results to the image. This has been done
-    //   for you.
-
-    // TODO: perform one iteration of path tracing
-
     generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths);
     checkCUDAError("generate camera ray");
 
@@ -322,12 +347,13 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         cudaDeviceSynchronize();
         depth++;
 
-        Lambert::sampleHemisphere<<<numblocksPathSegmentTracing, blockSize1d>>> (
+        getSampleDir<<<numblocksPathSegmentTracing, blockSize1d>>> (
             num_paths, 
             iter, 
             depth, 
             dev_paths, 
-            dev_intersections
+            dev_intersections,
+            dev_materials
         );
         checkCUDAError("sample hemisphere");
         cudaDeviceSynchronize();
@@ -341,7 +367,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
-        Lambert::shadePathLambert<<<numblocksPathSegmentTracing, blockSize1d>>>(
+        shadePath<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
             dev_intersections,

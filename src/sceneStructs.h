@@ -15,6 +15,12 @@ enum GeomType
     CUBE
 };
 
+enum MaterialType {
+    Diffuse = 0, // lambertian perfect diffuse
+    Specular, // perfectly specular
+    Emissive
+};
+
 struct Ray
 {
     glm::vec3 origin;
@@ -35,6 +41,7 @@ struct Geom
 
 struct Material
 {
+    MaterialType material_type;
     glm::vec3 color;
     struct
     {
