@@ -22,8 +22,7 @@
 void checkCUDAErrorFn(const char* msg, const char* file, int line)
 {
 #if ERRORCHECK
-    cudaDeviceSynchronize();
-    cudaError_t err = cudaGetLastError();
+    cudaError_t err = cudaDeviceSynchronize();
     if (cudaSuccess == err)
     {
         return;
@@ -144,7 +143,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         PathSegment& segment = pathSegments[index];
 
         segment.ray.origin = cam.position;
-        segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        segment.color = glm::vec3(0.0f, 0.0f, 0.0f);
+        segment.throughput = glm::vec3(1.0f, 1.0f, 1.0f);
 
         // TODO: implement antialiasing by jittering the ray
         segment.ray.direction = glm::normalize(cam.view
@@ -153,7 +153,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         );
 
         segment.pixelIndex = index;
-        segment.remainingBounces = traceDepth;
+        
+        segment.remainingBounces = traceDepth - 1;
     }
 }
 
@@ -259,26 +260,65 @@ __global__ void shadeFakeMaterial(
 
             // If the material indicates that the object was a light, "light" the ray
             if (material.emittance > 0.0f) {
-                pathSegments[idx].color *= (materialColor * material.emittance);
+                pathSegments[idx].color += pathSegments[idx].throughput * material.emittance;
+                // pathSegments[idx].color = (pathSegments[idx].color * material.emittance);
+                // pathSegments[idx].color = (materialColor * material.emittance);
             }
-            // Otherwise, do some pseudo-lighting computation. This is actually more
-            // like what you would expect from shading in a rasterizer like OpenGL.
-            // TODO: replace this! you should be able to start with basically a one-liner
             else {
-                float lightTerm = glm::dot(intersection.surfaceNormal, glm::vec3(0.0f, 1.0f, 0.0f));
-                pathSegments[idx].color *= (materialColor * lightTerm) * 0.3f + ((1.0f - intersection.t * 0.02f) * materialColor) * 0.7f;
-                pathSegments[idx].color *= u01(rng); // apply some noise because why not
+                glm::vec3 f = materialColor / glm::pi<float>();
+                float cosTheta = max(0.0f, glm::dot(pathSegments[idx].sample_dir, shadeableIntersections[idx].surfaceNormal));
+                float pdf = max(1e-6f, cosTheta / glm::pi<float>());
+                pathSegments[idx].throughput *= f * cosTheta / pdf;
             }
-            // If there was no intersection, color the ray black.
-            // Lots of renderers use 4 channel color, RGBA, where A = alpha, often
-            // used for opacity, in which case they can indicate "no opacity".
-            // This can be useful for post-processing and image compositing.
-        }
-        else {
-            pathSegments[idx].color = glm::vec3(0.0f);
         }
     }
 }
+
+
+
+
+__global__ void advancePathSegments(int num_paths, PathSegment* paths, ShadeableIntersection *intersections) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_paths)
+    {
+        return;
+    }
+
+    if (intersections[idx].t < 0.0f) {
+        return;
+    }
+
+    paths[idx].ray.origin = getPointOnRay(paths[idx].ray, intersections[idx].t);
+    paths[idx].ray.direction = paths[idx].sample_dir;
+
+    if (paths[idx].remainingBounces > 0) {
+        paths[idx].remainingBounces -= 1;
+    }
+}
+
+
+
+
+__global__ void sampleHemisphere(int num_paths, int iter, int depth, PathSegment* paths, ShadeableIntersection *intersections) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_paths)
+    {
+        return;
+    }
+
+    thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+
+    glm::vec3 wo = -paths[idx].ray.direction;
+    glm::vec3 wi;
+
+    wi = calculateRandomDirectionInHemisphere(intersections[idx].surfaceNormal, rng);
+
+    paths[idx].sample_dir = wi;
+}
+
+
+
+
 
 // Add the current iteration's output to the overall image
 __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
@@ -368,9 +408,19 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             hst_scene->geoms.size(),
             dev_intersections
         );
-        checkCUDAError("trace one bounce");
+        checkCUDAError("compute intersections");
         cudaDeviceSynchronize();
         depth++;
+
+        sampleHemisphere<<<numblocksPathSegmentTracing, blockSize1d>>> (
+            num_paths, 
+            iter, 
+            depth, 
+            dev_paths, 
+            dev_intersections
+        );
+        checkCUDAError("sample hemisphere");
+        cudaDeviceSynchronize();
 
         // TODO:
         // --- Shading Stage ---
@@ -388,7 +438,17 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_materials
         );
-        iterationComplete = true; // TODO: should be based off stream compaction results.
+
+        if (depth == traceDepth) {
+            iterationComplete = true; // TODO: should be based off stream compaction results.
+        }
+
+        advancePathSegments<<<numblocksPathSegmentTracing, blockSize1d>>>(
+            num_paths,
+            dev_paths,
+            dev_intersections
+        );
+        checkCUDAError("advance path segments");
 
         if (guiData != NULL)
         {
