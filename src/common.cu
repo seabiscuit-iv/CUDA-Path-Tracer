@@ -4,11 +4,15 @@
 #include <cstdio>
 #include <thrust/random.h>
 #include "intersections.h"
+#include <thrust/device_ptr.h>
 
 #define ERRORCHECK 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
+
+#define dPtr(x) thrust::device_pointer_cast(x)
+
 void checkCUDAErrorFn(const char* msg, const char* file, int line)
 {
 #if ERRORCHECK
@@ -41,5 +45,12 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
 #define CREATE_RANDOM_ENGINE(iter, idx, depth, u01, rng) \
 thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth); \
 thrust::uniform_real_distribution<float> u01(0, 1)
+
+// for stream compaction
+struct path_terminated {
+    __host__ __device__ bool operator()(PathSegment path) const {
+        return path.remainingBounces == -2;
+    }
+};
 
 #endif COMMON

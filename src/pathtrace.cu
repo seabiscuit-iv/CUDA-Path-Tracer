@@ -20,6 +20,12 @@
 #include "shaders/lambert.cu"
 #include "shaders/specular.cu"
 
+
+// CONFIGURATION
+#define STREAM_COMPACTION 1
+
+
+
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
 {
@@ -208,6 +214,7 @@ __global__ void advancePathSegments(int num_paths, PathSegment* paths, Shadeable
     }
 
     if (intersections[idx].t < 0.0f) {
+        paths[idx].remainingBounces = -1;
         return;
     }
 
@@ -321,8 +328,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     checkCUDAError("generate camera ray");
 
     int depth = 0;
-    PathSegment* dev_path_end = dev_paths + pixelcount;
-    int num_paths = dev_path_end - dev_paths;
+    int num_paths = pixelcount;
 
     // --- PathSegment Tracing Stage ---
     // Shoot ray into scene, bounce between objects, push shading chunks
@@ -331,7 +337,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     while (!iterationComplete)
     {
         // clean shading chunks
-        cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
+        cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
 
         // tracing
         dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
@@ -386,6 +392,12 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_intersections
         );
         checkCUDAError("advance path segments");
+
+        #if STREAM_COMPACTION
+            auto new_end = thrust::remove_if(dPtr(dev_paths), dPtr(dev_paths) + num_paths, path_terminated());
+            num_paths = new_end - dPtr(dev_paths);
+            checkCUDAError("thrust::remove_if");
+        #endif // STREAM_COMPACTION
 
         if (guiData != NULL)
         {
