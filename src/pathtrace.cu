@@ -15,38 +15,9 @@
 #include "intersections.h"
 #include "interactions.h"
 
-#define ERRORCHECK 1
+#include "common.cu"
 
-#define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
-void checkCUDAErrorFn(const char* msg, const char* file, int line)
-{
-#if ERRORCHECK
-    cudaError_t err = cudaDeviceSynchronize();
-    if (cudaSuccess == err)
-    {
-        return;
-    }
-
-    fprintf(stderr, "CUDA error");
-    if (file)
-    {
-        fprintf(stderr, " (%s:%d)", file, line);
-    }
-    fprintf(stderr, ": %s: %s\n", msg, cudaGetErrorString(err));
-#ifdef _WIN32
-    getchar();
-#endif // _WIN32
-    exit(EXIT_FAILURE);
-#endif // ERRORCHECK
-}
-
-__host__ __device__
-thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth)
-{
-    int h = utilhash((1 << 31) | (depth << 22) | iter) ^ utilhash(index);
-    return thrust::default_random_engine(h);
-}
+#include "shaders/lambert.cu"
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
@@ -227,55 +198,6 @@ __global__ void computeIntersections(
     }
 }
 
-// LOOK: "fake" shader demonstrating what you might do with the info in
-// a ShadeableIntersection, as well as how to use thrust's random number
-// generator. Observe that since the thrust random number generator basically
-// adds "noise" to the iteration, the image should start off noisy and get
-// cleaner as more iterations are computed.
-//
-// Note that this shader does NOT do a BSDF evaluation!
-// Your shaders should handle that - this can allow techniques such as
-// bump mapping.
-__global__ void shadeFakeMaterial(
-    int iter,
-    int num_paths,
-    ShadeableIntersection* shadeableIntersections,
-    PathSegment* pathSegments,
-    Material* materials)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < num_paths)
-    {
-        ShadeableIntersection intersection = shadeableIntersections[idx];
-        if (intersection.t > 0.0f) // if the intersection exists...
-        {
-          // Set up the RNG
-          // LOOK: this is how you use thrust's RNG! Please look at
-          // makeSeededRandomEngine as well.
-            thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, 0);
-            thrust::uniform_real_distribution<float> u01(0, 1);
-
-            Material material = materials[intersection.materialId];
-            glm::vec3 materialColor = material.color;
-
-            // If the material indicates that the object was a light, "light" the ray
-            if (material.emittance > 0.0f) {
-                pathSegments[idx].color += pathSegments[idx].throughput * material.emittance;
-                // pathSegments[idx].color = (pathSegments[idx].color * material.emittance);
-                // pathSegments[idx].color = (materialColor * material.emittance);
-            }
-            else {
-                glm::vec3 f = materialColor / glm::pi<float>();
-                float cosTheta = max(0.0f, glm::dot(pathSegments[idx].sample_dir, shadeableIntersections[idx].surfaceNormal));
-                float pdf = max(1e-6f, cosTheta / glm::pi<float>());
-                pathSegments[idx].throughput *= f * cosTheta / pdf;
-            }
-        }
-    }
-}
-
-
-
 
 __global__ void advancePathSegments(int num_paths, PathSegment* paths, ShadeableIntersection *intersections) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -299,26 +221,6 @@ __global__ void advancePathSegments(int num_paths, PathSegment* paths, Shadeable
 
 
 
-__global__ void sampleHemisphere(int num_paths, int iter, int depth, PathSegment* paths, ShadeableIntersection *intersections) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_paths)
-    {
-        return;
-    }
-
-    thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
-
-    glm::vec3 wo = -paths[idx].ray.direction;
-    glm::vec3 wi;
-
-    wi = calculateRandomDirectionInHemisphere(intersections[idx].surfaceNormal, rng);
-
-    paths[idx].sample_dir = wi;
-}
-
-
-
-
 
 // Add the current iteration's output to the overall image
 __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
@@ -328,6 +230,14 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
     if (index < nPaths)
     {
         PathSegment iterationPath = iterationPaths[index];
+        glm::vec3 color = iterationPath.color;
+
+        //reinhard tonemap
+        color = color / (color + glm::vec3(1.0f));
+
+        //gamma correction
+        color = glm::pow(color, glm::vec3(1.0f / 2.2f));
+
         image[iterationPath.pixelIndex] += iterationPath.color;
     }
 }
@@ -412,7 +322,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         cudaDeviceSynchronize();
         depth++;
 
-        sampleHemisphere<<<numblocksPathSegmentTracing, blockSize1d>>> (
+        Lambert::sampleHemisphere<<<numblocksPathSegmentTracing, blockSize1d>>> (
             num_paths, 
             iter, 
             depth, 
@@ -431,12 +341,13 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
-        shadeFakeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
+        Lambert::shadePathLambert<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
             dev_intersections,
             dev_paths,
-            dev_materials
+            dev_materials,
+            depth
         );
 
         if (depth == traceDepth) {
