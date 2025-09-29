@@ -14,7 +14,7 @@
 #define CLAMP_POS(x) glm::max(x, 0.0f)
 
 // This is a workaround, and is not physically accurate. This should be replaced with direct light sampling and MIS
-#define REMOVE_FIREFLIES 0
+#define MICROFACET_REMOVE_FIREFLIES 0
 
 namespace CookTorrance {
 
@@ -143,14 +143,15 @@ namespace CookTorrance {
 
         glm::vec3 brdf = BRDF(wo, normal, wi, albedo, roughness, metallic);
 
-        #if REMOVE_FIREFLIES
+        #if MICROFACET_REMOVE_FIREFLIES
             brdf = glm::clamp(brdf, glm::vec3(0.0), glm::vec3(1.0));
         #endif // REMOVE_FIREFLIES
-        brdf = glm::vec3(0);
 
         float absdot = max(0.0f, glm::dot(wi, normal));
-        float pdf = max(1e-6f, PDF(wo, wi, normal, roughness));
-        path.throughput *= brdf * absdot / pdf;
+        float pdf = PDF(wo, wi, normal, roughness);
+
+        // MICROFACET PDF CLAMP, THIS IS NECESSARY TO REMOVE FIREFLIES
+        path.throughput *= brdf * absdot / glm::max(pdf, 0.025f);
     }   
 
 }
