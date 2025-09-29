@@ -1,7 +1,7 @@
 #include "intersections.h"
 
 __host__ __device__ float boxIntersectionTest(
-    Geom box,
+    Geom &box,
     Ray r,
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
@@ -57,7 +57,7 @@ __host__ __device__ float boxIntersectionTest(
 }
 
 __host__ __device__ float sphereIntersectionTest(
-    Geom sphere,
+    Geom &sphere,
     Ray r,
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
@@ -110,4 +110,83 @@ __host__ __device__ float sphereIntersectionTest(
     }
 
     return glm::length(r.origin - intersectionPoint);
+}
+
+
+__host__ __device__ float meshIntersectionTest(    
+    Geom &mesh,
+    Ray r,
+    glm::vec3 &intersectionPoint,
+    glm::vec3 &normal,
+    bool &outside ) 
+{
+    if (mesh.type != GeomType::MESH) {
+        printf("meshIntersectionTest called on non-mesh");
+    }
+
+    float epsilon = (float)(1.1920929E-7F);
+
+    int num_verts = mesh.mesh.num_verts;
+    glm::vec3* verts = mesh.mesh.d_verts;
+
+    float min_t = -1.0f;
+    glm::vec3 min_isect_point;
+    glm::vec3 min_normal;
+    bool min_outside;
+
+    for (int tri = 0; tri < num_verts; tri += 3) {
+        glm::vec3 a = verts[tri];
+        glm::vec3 b = verts[tri + 1];
+        glm::vec3 c = verts[tri + 2];
+
+        glm::vec3 edge1 = b - a;
+        glm::vec3 edge2 = c - a;
+
+        glm::vec3 r_cross_e2 = glm::cross(r.direction, edge2);
+        float det = glm::dot(edge1, r_cross_e2);
+
+        if (det > -epsilon && det < epsilon) {
+            continue;
+        }
+
+        float inv_det = 1.0 / det;
+        glm::vec3 s = r.origin - a;
+        float u = inv_det * glm::dot(s, r_cross_e2);
+
+        if ((u < 0 && glm::abs(u) > epsilon) || (u > 1 && glm::abs(u-1) > epsilon)) {
+            continue;
+        }
+
+        glm::vec3 s_cross_e1 = glm::cross(s, edge1);
+        float v = inv_det * glm::dot(r.direction, s_cross_e1);
+
+        if ((v < 0 && glm::abs(v) > epsilon) || (u + v > 1 && glm::abs(u + v - 1) > epsilon)) {
+            continue;
+        }
+
+        float t = inv_det * glm::dot(edge2,  s_cross_e1);
+
+        glm::vec3 pos;
+        if (t > epsilon) {
+            pos = r.origin + t * r.direction;
+        } else {
+            continue;
+        }
+
+        if ( min_t < 0 || t < min_t ) {
+            min_t = t;
+            min_isect_point = pos;
+            min_normal = glm::normalize(glm::cross(edge1, edge2));
+            if (glm::dot(min_normal, r.direction) > 0.0f) { 
+                min_normal = -min_normal;
+            }
+            min_outside = true;
+        }
+    }
+
+    intersectionPoint = min_isect_point;
+    normal = min_normal;
+    outside = min_outside;
+
+    return min_t;
 }

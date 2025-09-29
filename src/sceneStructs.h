@@ -3,16 +3,19 @@
 #include <cuda_runtime.h>
 
 #include "glm/glm.hpp"
+#include "mesh.h"
 
 #include <string>
 #include <vector>
+#include <optional>
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
 enum GeomType
 {
     SPHERE,
-    CUBE
+    CUBE,
+    MESH
 };
 
 enum MaterialType {
@@ -22,7 +25,7 @@ enum MaterialType {
 };
 
 struct Ray
-{
+{ 
     glm::vec3 origin;
     glm::vec3 direction;
 };
@@ -37,6 +40,9 @@ struct Geom
     glm::mat4 transform;
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
+
+    // these are for the mesh, they will be null otherwise
+    Mesh mesh;
 };
 
 struct Material

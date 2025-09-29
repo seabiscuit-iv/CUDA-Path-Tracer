@@ -51,7 +51,7 @@ int height;
 
 GLuint positionLocation = 0;
 GLuint texcoordsLocation = 1;
-GLuint pbo;
+GLuint pbo = 0;
 GLuint displayImage;
 
 GLFWwindow* window;
@@ -350,11 +350,11 @@ int main(int argc, char** argv)
 
     const char* sceneFile = argv[1];
 
-    // Load scene file
-    scene = new Scene(sceneFile);
-
     //Create Instance for ImGUIData
     guiData = new GuiDataContainer();
+
+    // Load scene file
+    scene = new Scene(sceneFile);
 
     // Set up camera stuff from loaded path tracer settings
     iteration = 0;
@@ -386,8 +386,20 @@ int main(int argc, char** argv)
     InitImguiData(guiData);
     InitDataContainer(guiData);
 
+    for(Geom &g : scene->geoms) {
+        if (g.type == GeomType::MESH && g.mesh.h_valid) {
+            g.mesh.make_mesh_device();
+        }
+    }
+
     // GLFW main loop
     mainLoop();
+
+    for(Geom g : scene->geoms) {
+        if (g.type == GeomType::MESH && g.mesh.d_valid) {
+            g.mesh.delete_mesh_device();
+        }
+    }
 
     return 0;
 }

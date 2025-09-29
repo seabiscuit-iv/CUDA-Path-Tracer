@@ -2,6 +2,8 @@
 
 #include "utilities.h"
 
+#include <cuda.h>
+
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include "json.hpp"
@@ -74,9 +76,27 @@ void Scene::loadFromJSON(const std::string& jsonName)
         {
             newGeom.type = CUBE;
         }
-        else
+        else if (type == "sphere")
         {
             newGeom.type = SPHERE;
+        }
+        else if (type == "mesh") 
+        {
+            newGeom.type = GeomType::MESH;
+            const auto& verts = p["VERTICES"];
+
+            std::vector<glm::vec3> hostVerts;
+            for (size_t i = 0; i < verts.size(); i++) {
+                const auto& v = verts[i];
+                hostVerts.push_back(glm::vec3(v[0], v[1], v[2]));
+            }
+
+            newGeom.mesh.make_mesh_host(hostVerts);
+        }
+        else
+        {
+            printf("ERROR: Unrecognized geometry type %s\n", type);
+            exit(1);
         }
         newGeom.materialid = MatNameToID[p["MATERIAL"]];
         const auto& trans = p["TRANS"];

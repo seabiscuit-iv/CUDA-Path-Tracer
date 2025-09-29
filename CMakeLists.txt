@@ -57,6 +57,7 @@ set(headers
     src/scene.h
     src/sceneStructs.h
     src/utilities.h
+    src/mesh.h
 )
 
 set(sources
@@ -67,6 +68,7 @@ set(sources
     src/pathtrace.cu
     src/intersections.cu
     src/interactions.cu
+    src/mesh.cu
     src/scene.cpp
     src/utilities.cpp
 )
