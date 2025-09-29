@@ -8,6 +8,12 @@
 #include <glm/gtx/string_cast.hpp>
 #include "json.hpp"
 
+#ifndef TINYOBJLOADER_IMPLEMENTATION
+#define TINYOBJLOADER_IMPLEMENTATION
+#endif // TINYOBJLOADER_IMPLEMENTATION
+
+#include "tinyobj/tiny_obj_loader.h"
+
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -103,9 +109,40 @@ void Scene::loadFromJSON(const std::string& jsonName)
 
             newGeom.mesh.make_mesh_host(hostVerts);
         }
-        else
+        else if (type == "obj")
         {
-            printf("ERROR: Unrecognized geometry type %s\n", type);
+            newGeom.type = GeomType::MESH;
+            const auto& f_n = p["FILE"];
+
+            std::string file_name(f_n);
+
+            tinyobj::attrib_t attributes;
+            std::vector<tinyobj::shape_t> shapes;
+            std::vector<tinyobj::material_t> materials;
+            std::string err = "";
+            tinyobj::LoadObj(&attributes, &shapes, &materials, &err, file_name.c_str(), nullptr, true);
+
+            if (err != "" ) {
+                printf("tinyobj Model Loading Error: %s\n", err.c_str());
+            }
+
+            std::vector<glm::vec3> hostVerts;
+            for(const tinyobj::shape_t &shape : shapes) {
+                for(int i = 0; i < shape.mesh.indices.size(); i++) {
+                    int vi = shape.mesh.indices[i].vertex_index;
+                    float v1 = attributes.vertices[3 * vi];
+                    float v2 = attributes.vertices[3 * vi + 1];
+                    float v3 = attributes.vertices[3 * vi + 2];
+
+                    hostVerts.push_back(glm::vec3(v1, v2, v3));
+                }
+            }
+
+            newGeom.mesh.make_mesh_host(hostVerts);
+        }
+        else    
+        {
+            printf("ERROR: Unrecognized geometry type %s\n", type.type_name());
             exit(1);
         }
         newGeom.materialid = MatNameToID[p["MATERIAL"]];
