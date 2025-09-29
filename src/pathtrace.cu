@@ -19,12 +19,13 @@
 
 #include "shaders/lambert.cu"
 #include "shaders/specular.cu"
+#include "shaders/cook_torrance.cu"
 
 
 // CONFIGURATION
 #define STREAM_COMPACTION 1
 
-
+#define SHADER_VER 1.3
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
@@ -261,6 +262,9 @@ __global__ void shadePath(
             else if (material.material_type == MaterialType::Specular) {
                 PerfectSpecular::shadePathSpecular(path, material);
             }
+            else if (material.material_type == MaterialType::Microfacet) {
+                CookTorrance::shadePathCookTorrance(intersection, path, material);
+            }
         }
     }
 }  
@@ -284,6 +288,9 @@ __global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* pa
         } 
         else if (material.material_type == MaterialType::Specular) {
             PerfectSpecular::sampleMirror(path, intersection);
+        }
+        else if (material.material_type == MaterialType::Microfacet) {
+            CookTorrance::sampleGGX(path, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness);
         }
     }
 }

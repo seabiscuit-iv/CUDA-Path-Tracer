@@ -21,7 +21,8 @@ enum GeomType
 enum MaterialType {
     Diffuse = 0, // lambertian perfect diffuse
     Specular, // perfectly specular
-    Emissive
+    Emissive,
+    Microfacet
 };
 
 struct Ray
@@ -58,6 +59,8 @@ struct Material
     float hasRefractive;
     float indexOfRefraction;
     float emittance;
+    float roughness = 0.0f;
+    float metallic = 0.0f;
 };
 
 struct Camera
