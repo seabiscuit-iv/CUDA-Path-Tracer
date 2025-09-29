@@ -124,7 +124,7 @@ __host__ __device__ float meshIntersectionTest(
         printf("meshIntersectionTest called on non-mesh");
     }
 
-    Ray r_ws = r;
+    Ray r_ws = r;   
 
     r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
     r.direction = glm::vec3(mesh.inverseTransform * glm::vec4(r.direction, 0.0f));
@@ -133,16 +133,18 @@ __host__ __device__ float meshIntersectionTest(
 
     int num_verts = mesh.mesh.num_verts;
     glm::vec3* verts = mesh.mesh.d_verts;
+    int num_indices = mesh.mesh.num_indices;
+    int* indices = mesh.mesh.d_indices;
 
     float min_t = -1.0f;
     glm::vec3 min_isect_point;
     glm::vec3 min_normal;
     bool min_outside;
 
-    for (int tri = 0; tri < num_verts; tri += 3) {
-        glm::vec3 a = verts[tri];
-        glm::vec3 b = verts[tri + 1];
-        glm::vec3 c = verts[tri + 2];
+    for (int tri = 0; tri < num_indices/3; tri++) {
+        glm::vec3 a = verts[indices[3 * tri + 0]];
+        glm::vec3 b = verts[indices[3 * tri + 1]];
+        glm::vec3 c = verts[indices[3 * tri + 2]];
 
         glm::vec3 edge1 = b - a;
         glm::vec3 edge2 = c - a;

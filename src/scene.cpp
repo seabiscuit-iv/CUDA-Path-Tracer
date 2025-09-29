@@ -102,12 +102,14 @@ void Scene::loadFromJSON(const std::string& jsonName)
             const auto& verts = p["VERTICES"];
 
             std::vector<glm::vec3> hostVerts;
+            std::vector<int> hostIndices;
             for (size_t i = 0; i < verts.size(); i++) {
                 const auto& v = verts[i];
                 hostVerts.push_back(glm::vec3(v[0], v[1], v[2]));
+                hostIndices.push_back(int(i));
             }
 
-            newGeom.mesh.make_mesh_host(hostVerts);
+            newGeom.mesh.make_mesh_host(hostVerts, hostIndices);
         }
         else if (type == "obj")
         {
@@ -127,18 +129,21 @@ void Scene::loadFromJSON(const std::string& jsonName)
             }
 
             std::vector<glm::vec3> hostVerts;
+            std::vector<int> hostIndices;
             for(const tinyobj::shape_t &shape : shapes) {
+                for (int i = 0; i < attributes.vertices.size(); i += 3) {
+                    float v1 = attributes.vertices[i];
+                    float v2 = attributes.vertices[i + 1];
+                    float v3 = attributes.vertices[i + 2];
+                    hostVerts.push_back(glm::vec3(v1, v2, v3));
+                }
                 for(int i = 0; i < shape.mesh.indices.size(); i++) {
                     int vi = shape.mesh.indices[i].vertex_index;
-                    float v1 = attributes.vertices[3 * vi];
-                    float v2 = attributes.vertices[3 * vi + 1];
-                    float v3 = attributes.vertices[3 * vi + 2];
-
-                    hostVerts.push_back(glm::vec3(v1, v2, v3));
+                    hostIndices.push_back(vi);
                 }
             }
 
-            newGeom.mesh.make_mesh_host(hostVerts);
+            newGeom.mesh.make_mesh_host(hostVerts, hostIndices);
         }
         else    
         {
