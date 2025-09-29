@@ -124,6 +124,11 @@ __host__ __device__ float meshIntersectionTest(
         printf("meshIntersectionTest called on non-mesh");
     }
 
+    Ray r_ws = r;
+
+    r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
+    r.direction = glm::vec3(mesh.inverseTransform * glm::vec4(r.direction, 0.0f));
+
     float epsilon = (float)(1.1920929E-7F);
 
     int num_verts = mesh.mesh.num_verts;
@@ -177,16 +182,16 @@ __host__ __device__ float meshIntersectionTest(
             min_t = t;
             min_isect_point = pos;
             min_normal = glm::normalize(glm::cross(edge1, edge2));
-            if (glm::dot(min_normal, r.direction) > 0.0f) { 
-                min_normal = -min_normal;
-            }
             min_outside = true;
         }
     }
 
-    intersectionPoint = min_isect_point;
-    normal = min_normal;
-    outside = min_outside;
+    intersectionPoint = r_ws.origin + r_ws.direction * min_t;
+    normal = glm::normalize(glm::vec3(mesh.invTranspose * glm::vec4(min_normal, 0.0f)));
+    if (glm::dot(normal, r_ws.direction) > 0.0f) {
+        normal = -normal;
+    }
+    outside = glm::dot(normal, r.direction) < 0.0f;
 
     return min_t;
 }
