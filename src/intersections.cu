@@ -113,6 +113,9 @@ __host__ __device__ float sphereIntersectionTest(
 }
 
 
+#define USE_NORMAL_BUFFERS 1
+
+
 __host__ __device__ float meshIntersectionTest(    
     Geom &mesh,
     Ray r,
@@ -136,10 +139,14 @@ __host__ __device__ float meshIntersectionTest(
     int num_indices = mesh.mesh.num_indices;
     int* indices = mesh.mesh.d_indices;
 
+    int num_normals = mesh.mesh.num_normals;
+    glm::vec3* normals = mesh.mesh.d_normals;
+    int num_normal_indices = mesh.mesh.num_normal_indices;
+    int* normal_indices = mesh.mesh.d_normal_indices;
+
     float min_t = -1.0f;
     glm::vec3 min_isect_point;
     glm::vec3 min_normal;
-    bool min_outside;
 
     for (int tri = 0; tri < num_indices/3; tri++) {
         glm::vec3 a = verts[indices[3 * tri + 0]];
@@ -183,8 +190,23 @@ __host__ __device__ float meshIntersectionTest(
         if ( min_t < 0 || t < min_t ) {
             min_t = t;
             min_isect_point = pos;
-            min_normal = glm::normalize(glm::cross(edge1, edge2));
-            min_outside = true;
+
+            #if USE_NORMAL_BUFFERS
+                if (mesh.mesh.has_normal_buffers) {
+                    // CALCULATE NORMALS FROM HERE
+                    glm::vec3 n0 = normals[normal_indices[3 * tri + 0]];
+                    glm::vec3 n1 = normals[normal_indices[3 * tri + 1]];
+                    glm::vec3 n2 = normals[normal_indices[3 * tri + 2]];
+
+                    glm::vec3 barycentrics(u, v, (1.0f - u - v));
+                    glm::vec3 normal = glm::normalize(barycentrics.x * n1 + barycentrics.y * n2 + barycentrics.z * n0);
+                    min_normal = normal;
+                } 
+                else 
+            #endif
+            {
+                min_normal = glm::normalize(glm::cross(edge1, edge2));
+            }
         }
     }
 
@@ -193,7 +215,7 @@ __host__ __device__ float meshIntersectionTest(
     if (glm::dot(normal, r_ws.direction) > 0.0f) {
         normal = -normal;
     }
-    outside = glm::dot(normal, r.direction) < 0.0f;
+    outside = glm::dot(normal, r_ws.direction) < 0.0f;
 
     return min_t;
 }

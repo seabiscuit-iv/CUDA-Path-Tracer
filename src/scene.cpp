@@ -109,7 +109,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
                 hostIndices.push_back(int(i));
             }
 
-            newGeom.mesh.make_mesh_host(hostVerts, hostIndices);
+            newGeom.mesh.make_mesh_host(hostVerts, hostIndices, std::vector<glm::vec3>(), std::vector<int>());
         }
         else if (type == "obj")
         {
@@ -143,7 +143,22 @@ void Scene::loadFromJSON(const std::string& jsonName)
                 }
             }
 
-            newGeom.mesh.make_mesh_host(hostVerts, hostIndices);
+            std::vector<glm::vec3> hostNormals;
+            std::vector<int> hostNormalIndices;
+            for(const tinyobj::shape_t &shape : shapes) {
+                for (int i = 0; i < attributes.normals.size(); i += 3) {
+                    float v1 = attributes.normals[i];
+                    float v2 = attributes.normals[i + 1];
+                    float v3 = attributes.normals[i + 2];
+                    hostNormals.push_back(glm::vec3(v1, v2, v3));
+                }
+                for(int i = 0; i < shape.mesh.indices.size(); i++) {
+                    int ni = shape.mesh.indices[i].normal_index;
+                    hostNormalIndices.push_back(ni);
+                }
+            }
+
+            newGeom.mesh.make_mesh_host(hostVerts, hostIndices, hostNormals, hostNormalIndices);
         }
         else    
         {
