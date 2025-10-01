@@ -26,7 +26,7 @@
 #define STREAM_COMPACTION 1
 
 // Bump the shader version to recompile shaders. We need a better solution for this
-#define SHADER_VER 2.0
+#define SHADER_VER 2.3
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)

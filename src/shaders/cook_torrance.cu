@@ -54,7 +54,7 @@ namespace CookTorrance {
     __device__ glm::vec3 BRDF(glm::vec3 v, glm::vec3 n, glm::vec3 l, glm::vec3 albedo, float roughness, float metallic) {
         glm::vec3 h = glm::normalize(v + l);
 
-        roughness = glm::clamp(roughness, 0.0f, 1.0f);
+        roughness = glm::clamp(roughness, 0.05f, 1.0f);
         float alpha = roughness * roughness;
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
@@ -68,7 +68,12 @@ namespace CookTorrance {
         float denominator = 4 * CLAMP_POS(glm::dot(n, v)) * CLAMP_POS(glm::dot(n, l));
 
         glm::vec3 specular = numerator / glm::max(denominator, 0.0001f);
-        glm::vec3 diffuse = (1.0f - F) * (1.0f - metallic) * albedo / glm::pi<float>();
+
+        glm::vec3 nonSpecular = glm::vec3(1.0f) - F; // Use the same F calculated for specular
+        glm::vec3 k_S = F; // Specular ratio
+        glm::vec3 k_D = (1.0f - metallic) * nonSpecular; // Diffuse ratio, must be 0 for full metallic
+
+        glm::vec3 diffuse = k_D * albedo / glm::pi<float>();
 
         return diffuse + specular;
     }
@@ -91,6 +96,7 @@ namespace CookTorrance {
         float x1 = u01(rng);
         float x2 = u01(rng);
 
+        roughness = glm::clamp(roughness, 0.05f, 1.0f);
         float alpha = roughness * roughness;
 
         float under_atan = (alpha * glm::sqrt(x1)) / glm::sqrt(1.0f - x1); 
@@ -117,6 +123,7 @@ namespace CookTorrance {
     __device__ float PDF( glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness) {
         glm::vec3 h = glm::normalize(wo + wi);
 
+        roughness = glm::clamp(roughness, 0.05f, 1.0f);
         float alpha = roughness * roughness;
 
         float p_h = D_TrowbridgeReitz(h, n, alpha) * glm::dot(n, h);
