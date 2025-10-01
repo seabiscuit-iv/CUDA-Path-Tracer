@@ -76,14 +76,43 @@ BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, c
 
     // partition [start_a ... end_a][start_b ... end_b]
 
-    float log = glm::log2(float(end) - float(start));
-    float floor = glm::floor(log);
-    int mid = glm::pow(2.0f, floor);
+    // currently we have 9
+    // want to divide by 2 and allocate anything additionally after the fact
+    // log2(9) - 1 = 2
+    // partition = 4
+    // 9 - 2*4 = 1
+    // 4 + min(4, 1)
+    // 4 + min (0, 1-4)
+
+    // 14
+    // log2(14) - 1 = 2
+    // partition = 4
+    // 14 - 2*4 = 6
+    // 4 + min(4, 6) -> rem => 8
+    // 4 + 6 - rem = 6
+
+    int num_leaves = (end - start + 1);
+    int log = glm::floor(glm::log2(float(num_leaves))) - 1.0f;
+    int partition = glm::pow(2, log);
+    int rem = num_leaves - 2 * partition;
+    int left_alloc = min(rem, partition);
+    int right_alloc = rem - left_alloc;
+
+    int window_size_a = partition + left_alloc;
+    int window_size_b = partition + right_alloc;
 
     int start_a = start;
-    int end_a = start + mid - 1;
+    int end_a = start + window_size_a - 1;
     int start_b = end_a + 1;
     int end_b = end;
+
+    if ( end_b - start_b + 1 != window_size_b ) {
+        printf("Error: end_b - start_b (%d) != right_alloc (%d)\n", end_b - start_b + 1, right_alloc);
+    }
+
+    if ( window_size_a < window_size_b ) {
+        printf("Window Size A %d was smaller than Window Size B %d\n", window_size_a, window_size_b);
+    }
 
     BoundingBox bbox_a = fill_bvh(LEFT_NODE(idx), start_a, end_a, h_bvh, verts, indices);
     BoundingBox bbox_b = fill_bvh(RIGHT_NODE(idx), start_b, end_b, h_bvh, verts, indices);
