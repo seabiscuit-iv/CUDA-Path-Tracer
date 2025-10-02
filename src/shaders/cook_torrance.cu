@@ -120,7 +120,25 @@ namespace CookTorrance {
         path.sample_dir = wi;
     }
 
-    __device__ float PDF( glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness) {
+    __device__ void sampleCookTorrance(PathSegment &path, Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness) {
+        CREATE_RANDOM_ENGINE(iter, idx, depth, u01, rng);
+        float r = u01(rng);
+
+        glm::vec3 dielectricF0 = glm::vec3(0.04f);
+        glm::vec3 F0 = glm::mix(dielectricF0, material.color, material.metallic);
+        float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
+
+        if (r <= probSpecular) {
+            sampleGGX(path, idx, iter, depth, wo, n, roughness);
+        } else {
+            glm::vec3 wo = -path.ray.direction;
+            glm::vec3 wi;
+            wi = calculateRandomDirectionInHemisphere(n, rng);
+            path.sample_dir = wi;
+        }
+    }
+
+    __device__ float PDF_GGX( glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness) {
         glm::vec3 h = glm::normalize(wo + wi);
 
         roughness = glm::clamp(roughness, 0.05f, 1.0f);
@@ -132,7 +150,20 @@ namespace CookTorrance {
 
         return p_wi;
     }  
+
     
+    __device__ float PDF(const Material &material, glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness) {
+        float pdfDiffuse  = max(0.0f, glm::dot(wi, n)) / glm::pi<float>();
+        float pdfSpecular = PDF_GGX(wo, wi, n, roughness);
+
+        glm::vec3 dielectricF0 = glm::vec3(0.04f);
+        glm::vec3 F0 = glm::mix(dielectricF0, material.color, material.metallic);
+        float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
+
+        float pdf = (1.0f - probSpecular) * pdfDiffuse + probSpecular * pdfSpecular;
+        return pdf;
+    }
+
     
     __device__ void shadePathCookTorrance(
         ShadeableIntersection &intersection,
@@ -155,7 +186,7 @@ namespace CookTorrance {
         #endif // REMOVE_FIREFLIES
 
         float absdot = max(0.0f, glm::dot(wi, normal));
-        float pdf = PDF(wo, wi, normal, roughness);
+        float pdf = PDF(material, wo, wi, normal, roughness);
 
         // MICROFACET PDF CLAMP, THIS IS NECESSARY TO REMOVE FIREFLIES
         path.throughput *= brdf * absdot / glm::max(pdf, 0.025f);

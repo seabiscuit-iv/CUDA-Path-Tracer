@@ -26,7 +26,7 @@
 #define STREAM_COMPACTION 1
 
 // Bump the shader version to recompile shaders. We need a better solution for this
-#define SHADER_VER 2.3
+#define SHADER_VER 2.8
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
@@ -291,7 +291,7 @@ __global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* pa
             PerfectSpecular::sampleMirror(path, intersection);
         }
         else if (material.material_type == MaterialType::Microfacet) {
-            CookTorrance::sampleGGX(path, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness);
+            CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness);
         }
     }
 }
