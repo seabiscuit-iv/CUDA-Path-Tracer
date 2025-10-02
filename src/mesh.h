@@ -6,6 +6,7 @@
 
 
 class Ray;
+class Triangle;
 
 #define EPS 0.01f
 
@@ -35,7 +36,7 @@ struct BoundingBox {
         box_min = glm::vec3(0.0);
         box_max = glm::vec3(0.0);
     }
-    
+
     __host__ __device__
     bool RayBoxInterection(Ray ray);
 };
@@ -44,18 +45,18 @@ struct BoundingBox {
 struct BVHNode {
     bool isLeaf;
     BoundingBox box; // undefined if isLeaf == true
-    int tri_indices = -1; // indexes into d_indices and d_normal_indices
+    int tri_index = -1; // indexes into d_indices and d_normal_indices
 
 
     void make_bvh_node(BoundingBox bbox) {
         isLeaf = false;
         box = bbox;
-        tri_indices = -1;
+        tri_index = -1;
     }
 
     void make_bvh_leaf_node(int idx) {
         isLeaf = true;
-        this->tri_indices = idx;
+        this->tri_index = idx;
     }
 };
 
@@ -69,7 +70,7 @@ struct BVH {
     int num_nodes;
     BVHNode* dev_bvh;
 
-    void make_bvh(std::vector<glm::vec3> v, std::vector<int> i);
+    void make_bvh(std::vector<glm::vec3> v, std::vector<Triangle> i);
     void delete_bvh();
 };
 
@@ -82,21 +83,18 @@ struct Mesh {
     bool has_normal_buffers = false;
 
     std::vector<glm::vec3> h_verts;
-    std::vector<int> h_indices;
 
     std::vector<glm::vec3> h_normals;
-    std::vector<int> h_normal_indices;
+    
+    std::vector<Triangle> h_triangles;
 
     int num_verts = 0;
-    int num_indices = 0;
-
+    int num_triangles = 0;
     int num_normals = 0;
-    int num_normal_indices = 0;
 
     glm::vec3* d_verts = nullptr;
-    int* d_indices = nullptr;
+    Triangle* d_triangles = nullptr;
     glm::vec3* d_normals = nullptr;
-    int* d_normal_indices = nullptr;
 
     BVH bvh;
 

@@ -157,7 +157,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
                     hostNormalIndices.push_back(ni);
                 }
             }
-
+            
             newGeom.mesh.make_mesh_host(hostVerts, hostIndices, hostNormals, hostNormalIndices);
         }
         else    

@@ -144,13 +144,11 @@ __host__ __device__ float meshIntersectionTest(
 
     int num_verts = mesh.mesh.num_verts;
     glm::vec3* verts = mesh.mesh.d_verts;
-    int num_indices = mesh.mesh.num_indices;
-    int* indices = mesh.mesh.d_indices;
+    int num_tris = mesh.mesh.num_triangles;
+    Triangle* triangles = mesh.mesh.d_triangles;
 
     int num_normals = mesh.mesh.num_normals;
     glm::vec3* normals = mesh.mesh.d_normals;
-    int num_normal_indices = mesh.mesh.num_normal_indices;
-    int* normal_indices = mesh.mesh.d_normal_indices;
 
     float min_t = -1.0f;
     glm::vec3 min_isect_point;
@@ -165,11 +163,11 @@ __host__ __device__ float meshIntersectionTest(
                 dfs_stack.push(LEFT_NODE(bvh_idx));
             }
         } else {
-            int tri = bvh[bvh_idx].tri_indices;
+            int tri = bvh[bvh_idx].tri_index;
 
-            glm::vec3 a = verts[indices[3 * tri + 0]];
-            glm::vec3 b = verts[indices[3 * tri + 1]];
-            glm::vec3 c = verts[indices[3 * tri + 2]];
+            glm::vec3 a = verts[triangles[tri].v_indices[0]];
+            glm::vec3 b = verts[triangles[tri].v_indices[1]];
+            glm::vec3 c = verts[triangles[tri].v_indices[2]];
 
             glm::vec3 edge1 = b - a;
             glm::vec3 edge2 = c - a;
@@ -212,9 +210,9 @@ __host__ __device__ float meshIntersectionTest(
                 #if USE_NORMAL_BUFFERS
                     if (mesh.mesh.has_normal_buffers) {
                         // CALCULATE NORMALS FROM HERE
-                        glm::vec3 n0 = normals[normal_indices[3 * tri + 0]];
-                        glm::vec3 n1 = normals[normal_indices[3 * tri + 1]];
-                        glm::vec3 n2 = normals[normal_indices[3 * tri + 2]];
+                        glm::vec3 n0 = normals[triangles[tri].v_indices[0]];
+                        glm::vec3 n1 = normals[triangles[tri].v_indices[1]];
+                        glm::vec3 n2 = normals[triangles[tri].v_indices[2]];
 
                         glm::vec3 barycentrics(u, v, (1.0f - u - v));
                         glm::vec3 normal = glm::normalize(barycentrics.x * n1 + barycentrics.y * n2 + barycentrics.z * n0);

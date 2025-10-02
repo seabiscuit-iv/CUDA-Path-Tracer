@@ -7,7 +7,6 @@
 
 #include <string>
 #include <vector>
-#include <optional>
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
@@ -23,6 +22,20 @@ enum MaterialType {
     Specular, // perfectly specular
     Emissive,
     Microfacet
+};
+
+
+struct Triangle {
+    int v_indices[3];
+    int n_indices[3];
+
+    Triangle(int v[3], int n[3])
+    {
+        for(int i = 0; i < 3; i++) {
+            v_indices[i] = v[i];
+            n_indices[i] = n[i];
+        }
+    }
 };
 
 struct Ray
