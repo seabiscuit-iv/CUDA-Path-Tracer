@@ -63,10 +63,6 @@ struct BVHNode {
 };
 
 
-
-#define LEFT_NODE(x) 2*x + 1
-#define RIGHT_NODE(x) 2*x + 2
-
 struct BVH {
     bool initizalized = false;
     int num_nodes;
