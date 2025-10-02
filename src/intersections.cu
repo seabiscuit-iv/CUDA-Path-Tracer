@@ -1,4 +1,5 @@
 #include "intersections.h"
+#include "stack.h"
 
 __host__ __device__ float boxIntersectionTest(
     Geom &box,
@@ -132,6 +133,13 @@ __host__ __device__ float meshIntersectionTest(
     r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
     r.direction = glm::vec3(mesh.inverseTransform * glm::vec4(r.direction, 0.0f));
 
+    // at this point, r is now in object space
+
+    BVHNode* bvh = mesh.mesh.bvh.dev_bvh;
+    
+    Stack dfs_stack;
+    dfs_stack.push(0);
+
     float epsilon = (float)(1.1920929E-7F);
 
     int num_verts = mesh.mesh.num_verts;
@@ -148,64 +156,75 @@ __host__ __device__ float meshIntersectionTest(
     glm::vec3 min_isect_point;
     glm::vec3 min_normal;
 
-    for (int tri = 0; tri < num_indices/3; tri++) {
-        glm::vec3 a = verts[indices[3 * tri + 0]];
-        glm::vec3 b = verts[indices[3 * tri + 1]];
-        glm::vec3 c = verts[indices[3 * tri + 2]];
+    while (!dfs_stack.isEmpty()) {
+        int bvh_idx = dfs_stack.pop();
 
-        glm::vec3 edge1 = b - a;
-        glm::vec3 edge2 = c - a;
-
-        glm::vec3 r_cross_e2 = glm::cross(r.direction, edge2);
-        float det = glm::dot(edge1, r_cross_e2);
-
-        if (det > -epsilon && det < epsilon) {
-            continue;
-        }
-
-        float inv_det = 1.0 / det;
-        glm::vec3 s = r.origin - a;
-        float u = inv_det * glm::dot(s, r_cross_e2);
-
-        if ((u < 0 && glm::abs(u) > epsilon) || (u > 1 && glm::abs(u-1) > epsilon)) {
-            continue;
-        }
-
-        glm::vec3 s_cross_e1 = glm::cross(s, edge1);
-        float v = inv_det * glm::dot(r.direction, s_cross_e1);
-
-        if ((v < 0 && glm::abs(v) > epsilon) || (u + v > 1 && glm::abs(u + v - 1) > epsilon)) {
-            continue;
-        }
-
-        float t = inv_det * glm::dot(edge2,  s_cross_e1);
-
-        glm::vec3 pos;
-        if (t > epsilon) {
-            pos = r.origin + t * r.direction;
+        if (!bvh[bvh_idx].isLeaf) {
+            if(bvh[bvh_idx].box.RayBoxInterection(r)) {
+                dfs_stack.push(RIGHT_NODE(bvh_idx));
+                dfs_stack.push(LEFT_NODE(bvh_idx));
+            }
         } else {
-            continue;
-        }
+            int tri = bvh[bvh_idx].tri_indices;
 
-        if ( min_t < 0 || t < min_t ) {
-            min_t = t;
-            min_isect_point = pos;
+            glm::vec3 a = verts[indices[3 * tri + 0]];
+            glm::vec3 b = verts[indices[3 * tri + 1]];
+            glm::vec3 c = verts[indices[3 * tri + 2]];
 
-            #if USE_NORMAL_BUFFERS
-                if (mesh.mesh.has_normal_buffers) {
-                    // CALCULATE NORMALS FROM HERE
-                    glm::vec3 n0 = normals[normal_indices[3 * tri + 0]];
-                    glm::vec3 n1 = normals[normal_indices[3 * tri + 1]];
-                    glm::vec3 n2 = normals[normal_indices[3 * tri + 2]];
+            glm::vec3 edge1 = b - a;
+            glm::vec3 edge2 = c - a;
 
-                    glm::vec3 barycentrics(u, v, (1.0f - u - v));
-                    glm::vec3 normal = glm::normalize(barycentrics.x * n1 + barycentrics.y * n2 + barycentrics.z * n0);
-                    min_normal = normal;
-                } 
-                else 
-            #endif
-            {
-                min_normal = glm::normalize(glm::cross(edge1, edge2));
+            glm::vec3 r_cross_e2 = glm::cross(r.direction, edge2);
+            float det = glm::dot(edge1, r_cross_e2);
+
+            if (det > -epsilon && det < epsilon) {
+                continue;
+            }
+
+            float inv_det = 1.0 / det;
+            glm::vec3 s = r.origin - a;
+            float u = inv_det * glm::dot(s, r_cross_e2);
+
+            if ((u < 0 && glm::abs(u) > epsilon) || (u > 1 && glm::abs(u-1) > epsilon)) {
+                continue;
+            }
+
+            glm::vec3 s_cross_e1 = glm::cross(s, edge1);
+            float v = inv_det * glm::dot(r.direction, s_cross_e1);
+
+            if ((v < 0 && glm::abs(v) > epsilon) || (u + v > 1 && glm::abs(u + v - 1) > epsilon)) {
+                continue;
+            }
+
+            float t = inv_det * glm::dot(edge2,  s_cross_e1);
+
+            glm::vec3 pos;
+            if (t > epsilon) {
+                pos = r.origin + t * r.direction;
+            } else {
+                continue;
+            }
+
+            if ( min_t < 0 || t < min_t ) {
+                min_t = t;
+                min_isect_point = pos;
+
+                #if USE_NORMAL_BUFFERS
+                    if (mesh.mesh.has_normal_buffers) {
+                        // CALCULATE NORMALS FROM HERE
+                        glm::vec3 n0 = normals[normal_indices[3 * tri + 0]];
+                        glm::vec3 n1 = normals[normal_indices[3 * tri + 1]];
+                        glm::vec3 n2 = normals[normal_indices[3 * tri + 2]];
+
+                        glm::vec3 barycentrics(u, v, (1.0f - u - v));
+                        glm::vec3 normal = glm::normalize(barycentrics.x * n1 + barycentrics.y * n2 + barycentrics.z * n0);
+                        min_normal = normal;
+                    } 
+                    else 
+                #endif
+                {
+                    min_normal = glm::normalize(glm::cross(edge1, edge2));
+                }
             }
         }
     }

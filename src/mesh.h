@@ -5,6 +5,10 @@
 #include <memory>
 
 
+class Ray;
+
+#define EPS 0.01f
+
 struct BoundingBox {
     glm::vec3 box_min; // mins of x, y, z
     glm::vec3 box_max; // maxs of x, y, z
@@ -23,17 +27,18 @@ struct BoundingBox {
             max.z = glm::max(max.z, verts[i].z);
         }
 
-        box_min = min;
-        box_max = max;
+        box_min = min - glm::vec3(EPS);
+        box_max = max + glm::vec3(EPS);
     }
 
     BoundingBox() {
         box_min = glm::vec3(0.0);
         box_max = glm::vec3(0.0);
     }
+    
+    __host__ __device__
+    bool RayBoxInterection(Ray ray);
 };
-
-
 
 
 struct BVHNode {

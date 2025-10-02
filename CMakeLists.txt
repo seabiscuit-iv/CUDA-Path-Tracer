@@ -59,6 +59,7 @@ set(headers
     src/utilities.h
     src/mesh.h
     src/tinyobj/tiny_obj_loader.h
+    src/stack.h
 )
 
 set(sources
@@ -72,6 +73,7 @@ set(sources
     src/mesh.cu
     src/scene.cpp
     src/utilities.cpp
+    src/stack.cu
 )
 
 set(imgui_headers

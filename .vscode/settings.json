@@ -3,7 +3,7 @@
     "C_Cpp.default.compilerPath": "cl.exe",
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
-        "args": ["scenes\\microfacets.json"]
+        "args": ["scenes\\dragon.json"]
     },
     "files.associations": {
         "array": "cpp",
@@ -84,6 +84,7 @@
         "ranges": "cpp",
         "span": "cpp",
         "valarray": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "deque": "cpp"
     }
 }

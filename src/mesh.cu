@@ -1,4 +1,7 @@
 #include "mesh.h"
+#include <stack>
+#include "stack.h"
+#include "sceneStructs.h"
 
 void Mesh::make_mesh_host(std::vector<glm::vec3> v, std::vector<int> indices, std::vector<glm::vec3> normals, std::vector<int> normal_indices) {
     num_verts = v.size();
@@ -148,3 +151,39 @@ void BVH::make_bvh(std::vector<glm::vec3> verts, std::vector<int> indices) {
     initizalized = true;
 }
 
+__host__ __device__
+bool BoundingBox::RayBoxInterection(Ray ray) {
+    float tmin = -FLT_MAX;
+    float tmax =  FLT_MAX;
+
+    ray.direction = glm::normalize(ray.direction);
+
+    for (int i = 0; i < 3; i++) {
+        if (fabs(ray.direction[i]) < 1e-8f) {
+            if (ray.origin[i] < box_min[i] || ray.origin[i] > box_max[i]) {
+                return false;
+            }
+        } 
+        else {
+            float invD = 1.0f / ray.direction[i];
+            float t0 = (box_min[i] - ray.origin[i]) * invD;
+            float t1 = (box_max[i] - ray.origin[i]) * invD;
+            if (t0 > t1) {
+                float temp = t0;
+                t0 = t1;
+                t1 = temp;
+            }
+
+            tmin = glm::max(tmin, t0);
+            tmax = glm::min(tmax, t1);
+
+            if (tmax < tmin) {
+                return false;
+            }
+        }
+    }
+
+    // tmin_out = tmin;
+    // tmax_out = tmax;
+    return true;
+}
