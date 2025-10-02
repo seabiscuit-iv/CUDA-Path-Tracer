@@ -96,82 +96,55 @@ BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, c
 
     // partition [start_a ... end_a][start_b ... end_b]
 
-    // currently we have 9
-    // want to divide by 2 and allocate anything additionally after the fact
-    // log2(9) - 1 = 2
-    // partition = 4
-    // 9 - 2*4 = 1
-    // 4 + min(4, 1)
-    // 4 + min (0, 1-4)
+    std::vector<glm::vec3> centroids;
 
-    // 14
-    // log2(14) - 1 = 2
-    // partition = 4
-    // 14 - 2*4 = 6
-    // 4 + min(4, 6) -> rem => 8
-    // 4 + 6 - rem = 6
-
-    if (false) {
-        std::vector<glm::vec3> centroids;
-
-        for(auto &triangle : triangles) {
-            glm::vec3 centroid(0.0f);
-            centroid += verts[triangle.v_indices[0]];
-            centroid += verts[triangle.v_indices[1]];
-            centroid += verts[triangle.v_indices[2]];
-            centroid /= 3.0f;
-            centroids.push_back(centroid);
-        }
-
-        float x_min = FLT_MAX, x_max = -FLT_MAX, y_min = FLT_MAX, y_max = -FLT_MAX, z_min = FLT_MAX, z_max = -FLT_MAX;
-
-        for (auto &centroid : centroids) {
-            x_min = glm::min(x_min, centroid.x);
-            x_max = glm::max(x_max, centroid.x);
-            
-            y_min = glm::min(y_min, centroid.y);
-            y_max = glm::max(y_max, centroid.y);
-
-            z_min = glm::min(z_min, centroid.z);
-            z_max = glm::max(z_max, centroid.z);
-        }
-
-        float x_dist = x_max - x_min;
-        float y_dist = y_max - y_min;
-        float z_dist = z_max - z_min;
-
-        
-        std::sort(tri_indices.begin() + start, tri_indices.begin() + end + 1, 
-            [&](int a, int b) {
-                glm::vec3 cA = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
-                glm::vec3 cB = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
-
-                if (x_dist >= y_dist && x_dist >= z_dist) {
-                    return cA.x < cB.x;
-                }
-                else if (y_dist >= x_dist && y_dist >= z_dist) {
-                    return cA.y < cB.y;
-                }
-                else if (z_dist >= x_dist && z_dist >= y_dist) {
-                    return cA.z < cB.z;
-                }
-                else {
-                    printf("UNREACHABLE\n");
-                    exit(1);
-                }
-            }
-        );
+    for(auto &triangle : triangles) {
+        glm::vec3 centroid(0.0f);
+        centroid += verts[triangle.v_indices[0]];
+        centroid += verts[triangle.v_indices[1]];
+        centroid += verts[triangle.v_indices[2]];
+        centroid /= 3.0f;
+        centroids.push_back(centroid);
     }
-    else {
-        std::sort(tri_indices.begin() + start, tri_indices.begin() + end + 1, 
-            [&](int a, int b) {
-                glm::vec3 cA = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
-                glm::vec3 cB = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
 
+    float x_min = FLT_MAX, x_max = -FLT_MAX, y_min = FLT_MAX, y_max = -FLT_MAX, z_min = FLT_MAX, z_max = -FLT_MAX;
+
+    for (auto &centroid : centroids) {
+        x_min = glm::min(x_min, centroid.x);
+        x_max = glm::max(x_max, centroid.x);
+        
+        y_min = glm::min(y_min, centroid.y);
+        y_max = glm::max(y_max, centroid.y);
+
+        z_min = glm::min(z_min, centroid.z);
+        z_max = glm::max(z_max, centroid.z);
+    }
+
+    float x_dist = x_max - x_min;
+    float y_dist = y_max - y_min;
+    float z_dist = z_max - z_min;
+
+    
+    std::sort(tri_indices.begin() + start, tri_indices.begin() + end + 1, 
+        [&](int a, int b) {
+            glm::vec3 cA = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
+            glm::vec3 cB = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
+
+            if (x_dist >= y_dist && x_dist >= z_dist) {
+                return cA.x < cB.x;
+            }
+            else if (y_dist >= x_dist && y_dist >= z_dist) {
+                return cA.y < cB.y;
+            }
+            else if (z_dist >= x_dist && z_dist >= y_dist) {
                 return cA.z < cB.z;
             }
-        );
-    }
+            else {
+                printf("UNREACHABLE\n");
+                exit(1);
+            }
+        }
+    );
 
     int num_leaves = (end - start + 1);
     int log = glm::floor(glm::log2(float(num_leaves))) - 1.0f;
