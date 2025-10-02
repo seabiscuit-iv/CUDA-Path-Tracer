@@ -80,8 +80,7 @@ void BVH::delete_bvh() {
 
 
 // START AND END ARE INCLUSIVE
-// we access indicies with 3 * start or 3 * end
-BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, const std::vector<glm::vec3> &verts, const std::vector<Triangle> &triangles, std::vector<int> &tri_indices) {
+BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, const std::vector<glm::vec3> &verts, const std::vector<Triangle> &triangles, std::vector<int> &tri_indices, int &allocated_length) {
     if (start == end) {
         // base case - single triangle
         h_bvh[idx] = BVHNode();
@@ -169,8 +168,12 @@ BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, c
         printf("Window Size A %d was smaller than Window Size B %d\n", window_size_a, window_size_b);
     }
 
-    BoundingBox bbox_a = fill_bvh(LEFT_NODE(idx), start_a, end_a, h_bvh, verts, triangles, tri_indices);
-    BoundingBox bbox_b = fill_bvh(RIGHT_NODE(idx), start_b, end_b, h_bvh, verts, triangles, tri_indices);
+    int left = allocated_length;
+    int right = allocated_length + 1;
+    allocated_length += 2;
+
+    BoundingBox bbox_a = fill_bvh(left, start_a, end_a, h_bvh, verts, triangles, tri_indices, allocated_length);
+    BoundingBox bbox_b = fill_bvh(right, start_b, end_b, h_bvh, verts, triangles, tri_indices, allocated_length);
 
     glm::vec3 combined_bbox[4] = {
         bbox_a.box_max,
@@ -181,7 +184,7 @@ BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, c
 
     h_bvh[idx] = BVHNode();
     auto fin_bbox = BoundingBox(combined_bbox, 4);
-    h_bvh[idx].make_bvh_node(fin_bbox);
+    h_bvh[idx].make_bvh_node(fin_bbox, left);
 
     return fin_bbox;
 }
@@ -200,7 +203,9 @@ void BVH::make_bvh(std::vector<glm::vec3> verts, std::vector<Triangle> triangles
         tri_indices[i] = i;
     }
 
-    fill_bvh(0, 0, num_leafs-1, h_bvh, verts, triangles, tri_indices);
+    int allocated_length = 1;
+
+    fill_bvh(0, 0, num_leafs-1, h_bvh, verts, triangles, tri_indices, allocated_length);
 
     cudaMalloc((void**)&dev_bvh, num_nodes * sizeof(BVHNode));
     cudaMemcpy(dev_bvh, h_bvh.data(), num_nodes * sizeof(BVHNode), cudaMemcpyHostToDevice);

@@ -159,8 +159,8 @@ __host__ __device__ float meshIntersectionTest(
 
         if (!bvh[bvh_idx].isLeaf) {
             if(bvh[bvh_idx].box.RayBoxInterection(r)) {
-                dfs_stack.push(RIGHT_NODE(bvh_idx));
-                dfs_stack.push(LEFT_NODE(bvh_idx));
+                dfs_stack.push(bvh[bvh_idx].left_child);
+                dfs_stack.push(bvh[bvh_idx].left_child + 1);
             }
         } else {
             int tri = bvh[bvh_idx].tri_index;

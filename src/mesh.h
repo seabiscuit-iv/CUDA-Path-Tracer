@@ -47,10 +47,13 @@ struct BVHNode {
     BoundingBox box; // undefined if isLeaf == true
     int tri_index = -1; // indexes into d_indices and d_normal_indices
 
-    void make_bvh_node(BoundingBox bbox) {
+    int left_child = -1;
+
+    void make_bvh_node(BoundingBox bbox, int lc) {
         isLeaf = false;
         box = bbox;
         tri_index = -1;
+        left_child = lc;
     }
 
     void make_bvh_leaf_node(int idx) {
