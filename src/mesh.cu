@@ -128,7 +128,7 @@ BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, c
     std::sort(tri_indices.begin() + start, tri_indices.begin() + end + 1, 
         [&](int a, int b) {
             glm::vec3 cA = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
-            glm::vec3 cB = (verts[triangles[a].v_indices[0]] + verts[triangles[a].v_indices[1]] + verts[triangles[a].v_indices[2]]) / 3.0f;
+            glm::vec3 cB = (verts[triangles[b].v_indices[0]] + verts[triangles[b].v_indices[1]] + verts[triangles[b].v_indices[2]]) / 3.0f;
 
             if (x_dist >= y_dist && x_dist >= z_dist) {
                 return cA.x < cB.x;
