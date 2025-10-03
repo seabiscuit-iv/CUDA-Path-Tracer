@@ -318,9 +318,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 // for stream compaction
 struct path_terminated {
     __host__ __device__ bool operator()(PathSegment path) const {
-        // return !path.kill && !path.hitEmissive;
         return !path.kill;
-        // return false;
     }
 };
 
