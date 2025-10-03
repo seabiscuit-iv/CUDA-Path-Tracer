@@ -48,6 +48,13 @@
             "RGB":[0.85, 0.35, 0.35],
             "ROUGHNESS": 0.25,
             "METALLIC": 0.0
+        },
+        "microfacet_blue":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.35, 0.55, 0.75],
+            "ROUGHNESS": 0.4,
+            "METALLIC": 0.8
         }
     },
     "Camera":
@@ -86,7 +93,7 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_white",
+            "MATERIAL":"diffuse_white",
             "TRANS":[0.0,5.0,-5.0],
             "ROTAT":[0.0,90.0,0.0],
             "SCALE":[0.01,10.0,10.0]
@@ -100,7 +107,7 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_green",
+            "MATERIAL":"diffuse_green",
             "TRANS":[5.0,5.0,0.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[0.01,10.0,10.0]
@@ -108,10 +115,10 @@
         {
             "TYPE":"obj",
             "FILE":"obj\\dragon.obj",
-            "MATERIAL":"diffuse_white",
+            "MATERIAL":"microfacet_blue",
             "TRANS":[0.0,0.0,-1.5],
             "ROTAT":[0.0,0.0,0.0],
-            "SCALE":[0.8,0.8,0.8] 
+            "SCALE":[0.7,0.7,0.7] 
         }
     ]
 }
