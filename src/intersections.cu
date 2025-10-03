@@ -114,7 +114,7 @@ __host__ __device__ float sphereIntersectionTest(
 }
 
 
-#define USE_NORMAL_BUFFERS 1
+#define USE_NORMAL_BUFFERS 0
 
 
 __host__ __device__ float meshIntersectionTest(    
