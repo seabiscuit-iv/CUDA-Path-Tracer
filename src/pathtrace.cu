@@ -252,7 +252,7 @@ __global__ void shadePath(
 
             if (material.material_type == MaterialType::Emissive) {
                 path.color += path.throughput * material.emittance * material.color;
-                path.hitEmissive = true;
+                path.kill = true;
             } 
             else if (material.material_type == MaterialType::Diffuse) {
                 Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
@@ -318,7 +318,8 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 // for stream compaction
 struct path_terminated {
     __host__ __device__ bool operator()(PathSegment path) const {
-        return path.kill;
+        // return !path.kill && !path.hitEmissive;
+        return !path.kill;
         // return false;
     }
 };
@@ -416,7 +417,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         checkCUDAError("advance path segments");
 
         #if STREAM_COMPACTION
-            auto new_end = thrust::remove_if(dPtr(dev_paths), dPtr(dev_paths) + num_paths, path_terminated());
+            auto new_end = thrust::partition(dPtr(dev_paths), dPtr(dev_paths) + num_paths, path_terminated());
             num_paths = new_end - dPtr(dev_paths);
             checkCUDAError("thrust::remove_if");
         #endif // STREAM_COMPACTION
@@ -431,11 +432,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         }
     }
 
-    if (num_paths != 0) {
         // Assemble this iteration and apply it to the image
-        dim3 numBlocksPixels = (num_paths + blockSize1d - 1) / blockSize1d;
-        finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
-    }
+    dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
+    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
+
 
     ///////////////////////////////////////////////////////////////////////////
 
