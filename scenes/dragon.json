@@ -107,7 +107,7 @@
         },
         {
             "TYPE":"obj",
-            "FILE":"obj\\dragon_lowres.obj",
+            "FILE":"obj\\dragon.obj",
             "MATERIAL":"diffuse_white",
             "TRANS":[0.0,0.0,-1.5],
             "ROTAT":[0.0,0.0,0.0],

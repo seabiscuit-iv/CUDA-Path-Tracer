@@ -33,8 +33,35 @@ struct BoundingBox {
     }
 
     BoundingBox() {
-        box_min = glm::vec3(0.0);
-        box_max = glm::vec3(0.0);
+        box_min = glm::vec3(FLT_MAX);
+        box_max = glm::vec3(-FLT_MAX);
+    }
+
+    void expandBox(BoundingBox bbox) {
+        box_min.x = glm::min(box_min.x, bbox.box_min.x);
+        box_min.y = glm::min(box_min.y, bbox.box_min.x);
+        box_min.z = glm::min(box_min.z, bbox.box_min.x);
+
+        box_max.x = glm::max(box_max.x, bbox.box_max.x);
+        box_max.y = glm::max(box_max.y, bbox.box_max.x);
+        box_max.z = glm::max(box_max.z, bbox.box_max.x);
+    }
+
+    void expandBoxByVec3(glm::vec3 p) {
+        box_min.x = glm::min(box_min.x, p.x);
+        box_min.y = glm::min(box_min.y, p.y);
+        box_min.z = glm::min(box_min.z, p.z);
+
+        box_max.x = glm::max(box_max.x, p.x);
+        box_max.y = glm::max(box_max.y, p.y);
+        box_max.z = glm::max(box_max.z, p.z);
+    }
+
+    float surfaceArea() const {
+        float dx = box_max.x - box_min.x;
+        float dy = box_max.y - box_min.y;
+        float dz = box_max.z - box_min.z;
+        return 2.0f * (dx*dy + dy*dz + dz*dx);
     }
 
     __host__ __device__

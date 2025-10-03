@@ -36,6 +36,15 @@ struct Triangle {
             n_indices[i] = n[i];
         }
     }
+
+    glm::vec3 centroid(const std::vector<glm::vec3> &verts) const {
+        glm::vec3 centroid(0.0f);
+        centroid += verts[v_indices[0]];
+        centroid += verts[v_indices[1]];
+        centroid += verts[v_indices[2]];
+        centroid /= 3.0f;
+        return centroid;
+    }
 };
 
 struct Ray

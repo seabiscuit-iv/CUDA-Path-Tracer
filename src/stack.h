@@ -1,6 +1,6 @@
 #pragma once
 
-#define STACK_MAX 64
+#define STACK_MAX 128
 
 struct Stack {
     int data[STACK_MAX];
