@@ -344,6 +344,27 @@ BoundingBox fill_bvh(int idx, int start, int end, std::vector<BVHNode> &h_bvh, c
 
             int mid = std::distance(tri_indices.begin(), pivot);
 
+            float lower_split_ratio = float(mid - start) / float(end - start + 1);
+            float upper_split_ratio = float(end - mid + 1) / float(end - start + 1);
+
+            if (lower_split_ratio < 0.15f || upper_split_ratio < 0.15f) {
+                // printf("Start %d, End %d, Mid %d\n", start, end, mid);
+                int new_mid = (start + end + 1) / 2;
+
+                std::nth_element(
+                    tri_indices.begin() + start, 
+                    tri_indices.begin() + new_mid, 
+                    tri_indices.begin() + end + 1,
+                    [&](int idx_a, int idx_b) {
+                        glm::vec3 c_a = triangles[idx_a].centroid(verts);
+                        glm::vec3 c_b = triangles[idx_b].centroid(verts);
+                        return c_a[best_axis] < c_b[best_axis];
+                    }
+                );
+
+                mid = new_mid;
+            }
+
             // printf("Start: %d, End: %d \nAxis: %s \nMid: %d\n\n", start, end, ax.c_str(), mid);
     // END SAH CALCULATION
 
@@ -396,8 +417,6 @@ __host__ __device__
 bool BoundingBox::RayBoxInterection(Ray ray) {
     float tmin = -FLT_MAX;
     float tmax =  FLT_MAX;
-
-    ray.direction = glm::normalize(ray.direction);
 
     for (int i = 0; i < 3; i++) {
         if (fabs(ray.direction[i]) < 1e-8f) {

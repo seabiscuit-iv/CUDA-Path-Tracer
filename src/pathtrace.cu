@@ -378,7 +378,6 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_intersections
         );
         checkCUDAError("compute intersections");
-        cudaDeviceSynchronize();
         depth++;
 
         thrust::sort_by_key(
@@ -398,7 +397,6 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_materials
         );
         checkCUDAError("sample hemisphere");
-        cudaDeviceSynchronize();
 
         // TODO:
         // --- Shading Stage ---

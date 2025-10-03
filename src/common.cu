@@ -6,7 +6,7 @@
 #include "intersections.h"
 #include <thrust/device_ptr.h>
 
-#define ERRORCHECK 1
+#define ERRORCHECK 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
