@@ -126,6 +126,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         segment.ray.origin = cam.position;
         segment.color = glm::vec3(0.0f, 0.0f, 0.0f);
         segment.throughput = glm::vec3(1.0f, 1.0f, 1.0f);
+        segment.kill = false;
 
         // TODO: implement antialiasing by jittering the ray
         segment.ray.direction = glm::normalize(cam.view
@@ -318,6 +319,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 struct path_terminated {
     __host__ __device__ bool operator()(PathSegment path) const {
         return path.kill;
+        // return false;
     }
 };
 
@@ -352,9 +354,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     bool iterationComplete = false;
     while (!iterationComplete)
     {
-        if (iter == 1) {
-            printf("NumPaths: %d\n", num_paths);
-        }
+        // if (iter == 1) {
+            // printf("NumPaths: %d\n", num_paths);
+        // }
 
         // clean shading chunks
         cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
