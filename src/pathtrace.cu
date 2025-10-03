@@ -6,6 +6,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <thrust/partition.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -133,8 +134,6 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         );
 
         segment.pixelIndex = index;
-        
-        segment.remainingBounces = traceDepth - 1;
     }
 }
 
@@ -219,17 +218,13 @@ __global__ void advancePathSegments(int num_paths, PathSegment* paths, Shadeable
         return;
     }
 
-    if (intersections[idx].t < 0.0f) {
-        paths[idx].remainingBounces = -1;
+    if (intersections[idx].t == -1.0f && !paths[idx].hitEmissive) {
+        paths[idx].kill = true;
         return;
     }
 
     paths[idx].ray.origin = getPointOnRay(paths[idx].ray, intersections[idx].t);
     paths[idx].ray.direction = paths[idx].sample_dir;
-
-    if (paths[idx].remainingBounces > 0) {
-        paths[idx].remainingBounces -= 1;
-    }
 }
 
 __global__ void shadePath(
@@ -256,6 +251,7 @@ __global__ void shadePath(
 
             if (material.material_type == MaterialType::Emissive) {
                 path.color += path.throughput * material.emittance * material.color;
+                path.hitEmissive = true;
             } 
             else if (material.material_type == MaterialType::Diffuse) {
                 Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
@@ -317,6 +313,14 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
     }
 }
 
+
+// for stream compaction
+struct path_terminated {
+    __host__ __device__ bool operator()(PathSegment path) const {
+        return path.kill;
+    }
+};
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -348,6 +352,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     bool iterationComplete = false;
     while (!iterationComplete)
     {
+        if (iter == 1) {
+            printf("NumPaths: %d\n", num_paths);
+        }
+
         // clean shading chunks
         cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
 
@@ -415,11 +423,17 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         {
             guiData->TracedDepth = depth;
         }
+
+        if (num_paths == 0) {
+            iterationComplete = true;
+        }
     }
 
-    // Assemble this iteration and apply it to the image
-    dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-    finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+    if (num_paths != 0) {
+        // Assemble this iteration and apply it to the image
+        dim3 numBlocksPixels = (num_paths + blockSize1d - 1) / blockSize1d;
+        finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+    }
 
     ///////////////////////////////////////////////////////////////////////////
 

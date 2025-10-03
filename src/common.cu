@@ -46,11 +46,5 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
 thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth); \
 thrust::uniform_real_distribution<float> u01(0, 1)
 
-// for stream compaction
-struct path_terminated {
-    __host__ __device__ bool operator()(PathSegment path) const {
-        return path.remainingBounces == -2;
-    }
-};
 
 #endif COMMON
