@@ -133,6 +133,11 @@ __host__ __device__ float meshIntersectionTest(
     r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
     r.direction = glm::vec3(mesh.inverseTransform * glm::vec4(r.direction, 0.0f));
 
+    r.inv_direction = glm::vec3(1.0f) / r.direction;
+    r.sign.x = (r.inv_direction.x < 0.0f) ? 1 : 0;
+    r.sign.y = (r.inv_direction.y < 0.0f) ? 1 : 0;
+    r.sign.z = (r.inv_direction.z < 0.0f) ? 1 : 0;
+
     // at this point, r is now in object space
 
     BVHNode* bvh = mesh.mesh.bvh.dev_bvh;
@@ -160,8 +165,7 @@ __host__ __device__ float meshIntersectionTest(
         if (!bvh[bvh_idx].isLeaf) {
             float box_t;
             bool hit = bvh[bvh_idx].box.RayBoxInterection(r, box_t);
-            // if (hit && (box_t < min_t || min_t == -1.0f)) {
-            if (hit) {
+            if (hit && (box_t < min_t || min_t == -1.0f)) {
                 dfs_stack.push(bvh[bvh_idx].left_child);
                 dfs_stack.push(bvh[bvh_idx].left_child + 1);
             }
@@ -206,7 +210,7 @@ __host__ __device__ float meshIntersectionTest(
                 continue;
             }
 
-            if ( min_t < 0 || t < min_t ) {
+            if (min_t < 0 || t < min_t ) {
                 min_t = t;
                 min_isect_point = pos;
 
