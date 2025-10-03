@@ -32,8 +32,8 @@
         {
             "TYPE":"Microfacet",
             "RGB":[0.98, 0.98, 0.98],
-            "ROUGHNESS": 0.5,
-            "METALLIC": 0.5
+            "ROUGHNESS": 0.4,
+            "METALLIC": 0.75
         },
         "microfacet_green":
         {
@@ -79,7 +79,7 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"diffuse_white",
+            "MATERIAL":"microfacet_white",
             "TRANS":[0.0,0.0,0.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[10.0,0.01,10.0]

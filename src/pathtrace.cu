@@ -7,6 +7,7 @@
 #include <thrust/random.h>
 #include <thrust/remove.h>
 #include <thrust/partition.h>
+#include <thrust/device_vector.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -317,8 +318,14 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 
 // for stream compaction
 struct path_terminated {
-    __host__ __device__ bool operator()(PathSegment path) const {
+    __host__ __device__ bool operator()(PathSegment &path) const {
         return !path.kill;
+    }
+};
+
+struct sort_materials {
+    __host__ __device__ bool operator()(const ShadeableIntersection &sA, const ShadeableIntersection &sB) const {
+        return sA.materialId < sB.materialId;
     }
 };
 
@@ -373,6 +380,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         checkCUDAError("compute intersections");
         cudaDeviceSynchronize();
         depth++;
+
+        thrust::sort_by_key(
+            thrust::device,
+            dev_intersections,
+            dev_intersections + num_paths,
+            dev_paths,
+            sort_materials()
+        );
 
         getSampleDir<<<numblocksPathSegmentTracing, blockSize1d>>> (
             num_paths, 
