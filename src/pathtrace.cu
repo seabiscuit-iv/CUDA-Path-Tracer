@@ -24,8 +24,11 @@
 #include "shaders/cook_torrance.cu"
 
 
+#define BLOCK_SIZE_1D 128
+
 // CONFIGURATION
 #define STREAM_COMPACTION 1
+#define MATERIAL_SORTING 0  // enable this if you have a high number of materials
 
 // Bump the shader version to recompile shaders. We need a better solution for this
 #define SHADER_VER 2.8
@@ -135,6 +138,12 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f)
         );
 
+        segment.ray.inv_direction = glm::vec3(1.0f) / segment.ray.direction;
+
+        segment.ray.sign.x = (segment.ray.inv_direction.x < 0) ? 1 : 0;
+        segment.ray.sign.y = (segment.ray.inv_direction.y < 0) ? 1 : 0;
+        segment.ray.sign.z = (segment.ray.inv_direction.z < 0) ? 1 : 0;
+
         segment.pixelIndex = index;
     }
 }
@@ -212,7 +221,6 @@ __global__ void computeIntersections(
     }
 }
 
-
 __global__ void advancePathSegments(int num_paths, PathSegment* paths, ShadeableIntersection *intersections) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_paths)
@@ -225,8 +233,15 @@ __global__ void advancePathSegments(int num_paths, PathSegment* paths, Shadeable
         return;
     }
 
-    paths[idx].ray.origin = getPointOnRay(paths[idx].ray, intersections[idx].t);
-    paths[idx].ray.direction = paths[idx].sample_dir;
+    Ray &ray = paths[idx].ray;
+
+    ray.origin = getPointOnRay(ray, intersections[idx].t);
+    ray.direction = paths[idx].sample_dir;
+    ray.inv_direction = glm::vec3(1.0f) / ray.direction;
+
+    ray.sign.x = (ray.inv_direction.x < 0) ? 1 : 0;
+    ray.sign.y = (ray.inv_direction.y < 0) ? 1 : 0;
+    ray.sign.z = (ray.inv_direction.z < 0) ? 1 : 0;
 }
 
 __global__ void shadePath(
@@ -346,7 +361,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // 1D block for path tracing
-    const int blockSize1d = 128;
+    const int blockSize1d = BLOCK_SIZE_1D;
 
     generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths);
     checkCUDAError("generate camera ray");
@@ -380,13 +395,15 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         checkCUDAError("compute intersections");
         depth++;
 
-        thrust::sort_by_key(
-            thrust::device,
-            dev_intersections,
-            dev_intersections + num_paths,
-            dev_paths,
-            sort_materials()
-        );
+        #if MATERIAL_SORTING
+            thrust::sort_by_key(
+                thrust::device,
+                dev_intersections,
+                dev_intersections + num_paths,
+                dev_paths,
+                sort_materials()
+            );
+        #endif
 
         getSampleDir<<<numblocksPathSegmentTracing, blockSize1d>>> (
             num_paths, 

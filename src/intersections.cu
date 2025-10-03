@@ -158,7 +158,10 @@ __host__ __device__ float meshIntersectionTest(
         int bvh_idx = dfs_stack.pop();
 
         if (!bvh[bvh_idx].isLeaf) {
-            if(bvh[bvh_idx].box.RayBoxInterection(r)) {
+            float box_t;
+            bool hit = bvh[bvh_idx].box.RayBoxInterection(r, box_t);
+            // if (hit && (box_t < min_t || min_t == -1.0f)) {
+            if (hit) {
                 dfs_stack.push(bvh[bvh_idx].left_child);
                 dfs_stack.push(bvh[bvh_idx].left_child + 1);
             }

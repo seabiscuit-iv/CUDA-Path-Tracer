@@ -65,7 +65,7 @@ struct BoundingBox {
     }
 
     __host__ __device__
-    bool RayBoxInterection(Ray ray);
+    bool RayBoxInterection(const Ray &ray, float& t_hit_min);
 };
 
 
