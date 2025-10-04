@@ -114,7 +114,7 @@
         },
         {
             "TYPE":"obj",
-            "FILE":"obj\\dragon_highres.obj",
+            "FILE":"obj\\dragon_lowres.obj",
             "MATERIAL":"microfacet_green",
             "TRANS":[0.0,0.0,-1.0],
             "ROTAT":[0.0,0.0,0.0],

@@ -163,11 +163,29 @@ __host__ __device__ float meshIntersectionTest(
         int bvh_idx = dfs_stack.pop();
 
         if (!bvh[bvh_idx].isLeaf) {
-            float box_t;
-            bool hit = bvh[bvh_idx].box.RayBoxInterection(r, box_t);
-            if (hit && (box_t < min_t || min_t == -1.0f)) {
-                dfs_stack.push(bvh[bvh_idx].left_child);
-                dfs_stack.push(bvh[bvh_idx].left_child + 1);
+            int left = bvh[bvh_idx].left_child;
+            int right = bvh[bvh_idx].left_child + 1;
+
+            float tmin_left, tmin_right;
+            bool hitLeft = bvh[left].isLeaf || bvh[left].box.RayBoxInterection(r, tmin_left);
+            bool hitRight = bvh[right].isLeaf || bvh[right].box.RayBoxInterection(r, tmin_right);
+
+            if (hitLeft && tmin_left > min_t && min_t >= 0.0f) {
+                hitLeft = false;
+            }
+            if (hitRight && tmin_right > min_t && min_t >= 0.0f) {
+                hitRight = false;
+            }
+
+            if (hitLeft && hitRight) {
+                dfs_stack.push(tmin_left <= tmin_right ? right : left);
+                dfs_stack.push(tmin_left <= tmin_right ? left : right);
+            }
+            else if (hitLeft) {
+                dfs_stack.push(left);
+            }
+            else if (hitRight) {
+                dfs_stack.push(right);
             }
         } else {
             int tri = bvh[bvh_idx].tri_index;
