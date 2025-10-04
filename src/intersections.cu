@@ -117,17 +117,13 @@ __host__ __device__ float sphereIntersectionTest(
 #define USE_NORMAL_BUFFERS 0
 
 
-__host__ __device__ float meshIntersectionTest(    
+__device__ float meshIntersectionTest(    
     Geom &mesh,
     Ray r,
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
     bool &outside ) 
 {
-    if (mesh.type != GeomType::MESH) {
-        printf("meshIntersectionTest called on non-mesh");
-    }
-
     Ray r_ws = r;   
 
     r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
@@ -204,7 +200,7 @@ __host__ __device__ float meshIntersectionTest(
                 continue;
             }
 
-            float inv_det = 1.0 / det;
+            float inv_det = __frcp_rn(det);
             glm::vec3 s = r.origin - a;
             float u = inv_det * glm::dot(s, r_cross_e2);
 
