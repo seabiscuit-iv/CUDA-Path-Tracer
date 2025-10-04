@@ -1,5 +1,6 @@
 #include "intersections.h"
 #include "stack.h"
+#include "pathtrace.h"
 
 __host__ __device__ float boxIntersectionTest(
     Geom &box,
@@ -125,6 +126,8 @@ __device__ float meshIntersectionTest(
     bool &outside ) 
 {
     Ray r_ws = r;   
+
+    
 
     r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
     r.direction = glm::vec3(mesh.inverseTransform * glm::vec4(r.direction, 0.0f));
