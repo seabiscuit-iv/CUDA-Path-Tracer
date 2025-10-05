@@ -43,3 +43,31 @@ CUDA Path Tracer
   - FPU Operation Intrinsics
   - Caching Division Values
 - References
+
+
+## Overview
+
+This project is a **CUDA-accelerated [path tracer](https://en.wikipedia.org/wiki/Path_tracing)** which simulates global illumination through physically-based lighting and material techniques, with the goal of generating photorealistic renders. It presents various features, including **physically-based materials**, **custom 3D model loading**, and an efficient **BVH geometry acceleration structure** with surface-area based construction for high-performance traversal. The renderer itself incorporates **stochastic sampled anti-aliasing**, **path partitioning** for active ray optimization, and various other rendering optimizations. These optimizations allow it to render extremely dense scenes like the **Stanford Dragon** (800K triangles) in complex lighting scenarios, all within a reasonable amount of time while maintaining physically accurate light transport. Most scenes converge at about **400 iterations**.
+
+## Code Structure
+
+Code is available in `src/`. Each file generally has a `.h` and `.cu`/`.cpp` pair. The following files are of notable importance:
+
+```py
+project-root/
+├── shaders/
+│   ├── lambert.cu              # Diffuse BRDF, PDF, Sampling function
+│   ├── specular.cu             # Reflection BRDF, mirror sampling
+│   └── cook_torrance.cu        # Microfacet BRDF, GGX sampling
+├── common.cu               # Useful CUDA-specific macros
+├── intersections.cu        # Intersection logic for primitives, BVH traversal
+├── mesh.cu                 # Mesh struct, BVH construction
+├── pathtrace.cu            # The main pathtracer loop and kernels
+├── stack.cu                # A device-side compile-time register stack
+├── scene.cpp               # Handles parsing .json scenes and mesh loading
+├── sceneStructs.h          # Structs for pathtracer elements e.g. Ray, PathSegment 
+└── main.cpp
+```
+
+`scenes/` contains a few scenes specified in a JSON format. Some of them reference obj models, which exist in `obj/`.
+
