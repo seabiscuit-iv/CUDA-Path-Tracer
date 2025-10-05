@@ -82,8 +82,16 @@ This path tracer contains a number of advanced features to improve **visual fide
 
 ### Lambertian Diffuse
 
-A very simple diffuse material BRDF based on [lambertian reflectance](https://en.wikipedia.org/wiki/Lambertian_reflectance). The general idea behind the Lambert shading model is that illumination is inversely related to the cosine of the angle between the surface normal and the incoming light ray, and is independent of the azimuthal angle of the light ray and view ray. Some examples of materials represented well by Lambertian reflectance include paper, concrete, wood, and paint.
+A very simple diffuse material BRDF based on [lambertian reflectance](https://en.wikipedia.org/wiki/Lambertian_reflectance). The general idea behind the Lambert shading model is that illumination is inversely related to the cosine of the angle between the surface normal and the incoming light ray, and is independent of the azimuthal angle of the light ray and view ray. Some examples of materials represented well by Lambertian reflectance include **paper, concrete, wood, and paint**.
 
-The Lambert BRDF is only dependent on albedo, so the sampling method we use is simply cosine-weighted hemisphere sampling about the surface normal (to balance out Lambert's law). The PDF is just $\frac{cos(\theta)}{\pi}$.
+The Lambert BRDF is only dependent on albedo, so the sampling method we use is simply cosine-weighted hemisphere sampling about the surface normal (to balance out [Lambert's law](https://en.wikipedia.org/wiki/Beer%E2%80%93Lambert_law)). The PDF is just $\frac{cos(\theta)}{\pi}$.
 
 The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/lambert.cu`. 
+
+### Perfect Specular Reflection
+
+[Perfectly specular reflection](https://pbr-book.org/3ed-2018/Reflection_Models/Specular_Reflection_and_Transmission) is essentially a **mirror**, where any light that comes in is reflected perfectly across the surface normal and not distributed at all. As a result, this material has no editable properties. Albedo, roughness, and metallic values have *zero* contribution to the final output. 
+
+The PDF for a mirror would be infinity for the reflected direction of our view vector across the surface normal, and zero everywhere else. This is called a [Dirac delta distribution](https://en.wikipedia.org/wiki/Dirac_delta_function). Similarly, the BRDF ends up also being a Dirac delta distribution. We only trace the reflected ray (since every other ray has no contribution), and so in our code, we omit the infinite values and simply multiply by our surface color. Note that we don't need to multiply by the Lambertian term because the BRDF for perfect specular already includes the cosine implicitly in its definition of a Dirac delta.
+
+The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/specular.cu`. 
