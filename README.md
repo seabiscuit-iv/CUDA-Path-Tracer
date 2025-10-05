@@ -90,8 +90,26 @@ The code for this material's BRDF, PDF, sampling and shading logic can be found 
 
 ### Perfect Specular Reflection
 
-[Perfectly specular reflection](https://pbr-book.org/3ed-2018/Reflection_Models/Specular_Reflection_and_Transmission) is essentially a **mirror**, where any light that comes in is reflected perfectly across the surface normal and not distributed at all. As a result, this material has no editable properties. Albedo, roughness, and metallic values have *zero* contribution to the final output. 
+[Perfectly specular reflection](https://pbr-book.org/3ed-2018/Reflection_Models/Specular_Reflection_and_Transmission) is essentially a **mirror**, where any light that comes in is reflected perfectly across the surface normal and not distributed at all. As a result, this material has no editable properties outside of albedo.
 
 The PDF for a mirror would be infinity for the reflected direction of our view vector across the surface normal, and zero everywhere else. This is called a [Dirac delta distribution](https://en.wikipedia.org/wiki/Dirac_delta_function). Similarly, the BRDF ends up also being a Dirac delta distribution. We only trace the reflected ray (since every other ray has no contribution), and so in our code, we omit the infinite values and simply multiply by our surface color. Note that we don't need to multiply by the Lambertian term because the BRDF for perfect specular already includes the cosine implicitly in its definition of a Dirac delta.
 
 The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/specular.cu`. 
+
+### Cook-Torrance PBR Material
+
+Lambertian and perfectly specular materials represent the two ends of the diffuse-specular spectrum of materials. However, most surfaces tend to fall somewhere in the middle, having a somewhat distributed yet still concentrated reflection lobe. This is what creates the rough and blurry reflections that are visible on polished and metallic surfaces.
+
+To represent this on metallic materials, we use the [Cook-Torrance microfacet model](https://graphicscompendium.com/gamedev/15-pbr), which consists of a number of infinitely small perfectly specular mirrors, all angled a random distance away from the surface macro-normal. Computing the BRDF and PDF for this model requires the use of various other credited formulas:
+
+- Trowbridge-Reitz Normal Distribution Function (NDF)
+- [Schlick Fresnel Approximation](https://en.wikipedia.org/wiki/Schlick%27s_approximation)
+- Smith GGX Microfacet Geometry Model
+
+For non-metallic materials, we use the [Dieletric model](https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF), which similarly uses a roughness value to shift between a clearcoat surface and a more standard diffuse surface. 
+
+Finally to combine these two, we use the material's metallic value to adjust the Fresnel term between the standard Dieletric value of ~0.04, and the Schlick approximation we use for metallics. In our sampling function, we also use the metallic value to adjust a probability value `probSpecular`, which decides the probability of our ray importance sampling either the dieletric or microfacet surface. 
+
+Combining these two gives us a standard PBR material that can be controlled by its albedo, roughness, and metallic values. 
+
+The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/cook_torrance.cu`. 
