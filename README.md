@@ -3,14 +3,43 @@ CUDA Path Tracer
 
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
 
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Saahil Gupta
+  * [LinkedIn](https://www.linkedin.com/in/saahil-g), [personal website](https://www.saahil-gupta.com)
+* Tested on: Windows 11 10.0.26100, AMD Ryzen 9 7940HS @ 4.0GHz 32GB, RTX 4060 Laptop GPU 8GB
 
-### (TODO: Your README)
+## Table of Contents
 
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
-
-![dragon](img/dragon_display.png)
-
-This README will be updated through the two additional days
+- Overview
+  - Code Structure
+- Features
+  - Materials
+    - Lambertian Diffuse Materials
+    - Perfectly Specular Materials
+    - Cook-Torrance PBR Materials
+  - Scene and Geometry Handling
+    - Triangle Mesh Rendering
+    - OBJ Model Importing
+    - Custom Normal Buffers
+  - Acceleration Structures
+    - Bounding Volume Hierarchy
+      - Construction
+      - Traversal
+    - Surface Area Heuristic
+    - Traversal Optimizations
+      - Min-distance Termination
+      - Node Sorting
+    - Stack Height Optimization
+  - Rendering Pipeline Improvements
+    - Terminated Path Partitioning
+    - Material Sorting
+- Performance Analysis
+  - Bounding Volume Hierarchy
+  - Terminated Path Partitioning
+  - Material Sorting
+- Renders
+- Future Goals
+- Miscallaneous Lessons
+  - Firefly Reduction
+  - FPU Operation Intrinsics
+  - Caching Division Values
+- References
