@@ -13,9 +13,9 @@ CUDA Path Tracer
   - Code Structure
 - Features
   - Materials
-    - Lambertian Diffuse Materials
-    - Perfectly Specular Materials
-    - Cook-Torrance PBR Materials
+    - Lambertian Diffuse
+    - Perfectly Specular
+    - Cook-Torrance PBR
   - Scene and Geometry Handling
     - Triangle Mesh Rendering
     - OBJ Model Importing
@@ -44,8 +44,9 @@ CUDA Path Tracer
   - Caching Division Values
 - References
 
+<br/>
 
-## Overview
+# Overview
 
 This project is a **CUDA-accelerated [path tracer](https://en.wikipedia.org/wiki/Path_tracing)** which simulates global illumination through physically-based lighting and material techniques, with the goal of generating photorealistic renders. It presents various features, including **physically-based materials**, **custom 3D model loading**, and an efficient **BVH geometry acceleration structure** with surface-area based construction for high-performance traversal. The renderer itself incorporates **stochastic sampled anti-aliasing**, **path partitioning** for active ray optimization, and various other rendering optimizations. These optimizations allow it to render extremely dense scenes like the **Stanford Dragon** (800K triangles) in complex lighting scenarios, all within a reasonable amount of time while maintaining physically accurate light transport. Most scenes converge at about **400 iterations**.
 
@@ -71,3 +72,18 @@ project-root/
 
 `scenes/` contains a few scenes specified in a JSON format. Some of them reference obj models, which exist in `obj/`.
 
+<br/>
+
+# Features
+
+This path tracer contains a number of advanced features to improve **visual fidelity**, **frame time**, and **convergence time**.
+
+## Materials
+
+### Lambertian Diffuse
+
+A very simple diffuse material BRDF based on [lambertian reflectance](https://en.wikipedia.org/wiki/Lambertian_reflectance). The general idea behind the Lambert shading model is that illumination is inversely related to the cosine of the angle between the surface normal and the incoming light ray, and is independent of the azimuthal angle of the light ray and view ray. Some examples of materials represented well by Lambertian reflectance include paper, concrete, wood, and paint.
+
+The Lambert BRDF is only dependent on albedo, so the sampling method we use is simply cosine-weighted hemisphere sampling about the surface normal (to balance out Lambert's law). The PDF is just $\frac{cos(\theta)}{\pi}$.
+
+The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/lambert.cu`. 
