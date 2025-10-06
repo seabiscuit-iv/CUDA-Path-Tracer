@@ -27,7 +27,7 @@ CUDA Path Tracer
     - [Surface Area Heuristic](#surface-area-heuristic)
       - [Binning](#binning)
       - [Traversal Optimizations](#traversal-optimizations)
-    - Stack Height Optimization
+    - [Stack Height Optimization](#stack-height-optimization)
   - Rendering Pipeline Improvements
     - Terminated Path Partitioning
     - Material Sorting
@@ -169,7 +169,7 @@ Furthermore, since we construct the tree top-down, it's impractical to compute $
 Binning is a way to improve the speed of minimizing the SAH at every level. The naive way to minimize the SAH is to calculate it at the centroid of every primitive, since this represents every possible split that can be made along an axis. Instead of doing this, we instead compute the SAH at constant intervals, allowing us to "bin" the primitives into interavls and precompute the bounding box of each bin. This reduces our SAH calculating runtime to $O(n)$, and our total tree construction time to $O(n^2\log n)$.
 
 
-### Traversal Optimizations
+#### Traversal Optimizations
 
 In our traversal algorithm, there are a number of quick and dirty optimizations we can make that will promote early branch pruning and have a strong impact on performance
 
@@ -177,4 +177,13 @@ In our traversal algorithm, there are a number of quick and dirty optimizations 
 If we intersect a bounding box, only traverse down if the intersection distance is closer than the current tracked primitive intersection.
 - **Node Sorting**  
 Sort the child nodes based on their bounding box intersection distances, promoting more min-distance termination
+
+
+### Stack Height Optimization
+
+Earlier, we mentioned that in our SAH calculation, we do not calculate $C_L$ and $C_R$ due to its impracticality and just assume them to be 1. However, this has consequences, as these cost values were the only defense against creating severely unbalanced partitions, where one child tree has a much larger height than the other.
+
+In order to defend against this, we can use a default case, where if the split point is in the top or bottom 15% of the range, we default to using a midpoint split. This is a quick and dirty solution to this problem, but it provides a good enough result for this project's needs. We can compute a midpoint split on our axis by performing a partition about the $\frac{n}{2}$th statistic. 
+
+This will guarantee that our tree height is no more than $\log _\frac{1}{1 - 0.15} n$, or $\log _{1.76} n$. For 2.5M triangles, this means our tree height is guarateed to be no more than 27. This is extremely important, because it allows us to create a constant-sized stack class (`src/stack.cu`) that will be stored in VPGRs rather than some paged memory module, creating noticeable performance gains.
 
