@@ -250,9 +250,9 @@ __global__ void advancePathSegments(int num_paths, PathSegment* __restrict__ pat
 __global__ void shadePath(
     int iter,
     int num_paths,
-    ShadeableIntersection* shadeableIntersections,
-    PathSegment* pathSegments,
-    Material* materials,
+    ShadeableIntersection* __restrict__ shadeableIntersections,
+    PathSegment* __restrict__ pathSegments,
+    Material* __restrict__ materials,
     int depth
 )
 {
@@ -347,10 +347,7 @@ struct sort_materials {
     }
 };
 
-/**
- * Wrapper for the __global__ call that sets up the kernel calls and does a ton
- * of memory management
- */
+
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
     const int traceDepth = hst_scene->state.traceDepth;
