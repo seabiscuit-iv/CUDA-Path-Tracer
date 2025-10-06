@@ -11,6 +11,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
+#define INV_PI 0.3183098f
+
 #define CLAMP_POS(x) glm::max(x, 0.0f)
 
 // This is a workaround, and is not physically accurate. This should be replaced with direct light sampling and MIS
@@ -73,7 +75,7 @@ namespace CookTorrance {
         glm::vec3 k_S = F; // Specular ratio
         glm::vec3 k_D = (1.0f - metallic) * nonSpecular; // Diffuse ratio, must be 0 for full metallic
 
-        glm::vec3 diffuse = k_D * albedo / glm::pi<float>();
+        glm::vec3 diffuse = k_D * albedo * INV_PI;
 
         return diffuse + specular;
     }
@@ -153,7 +155,7 @@ namespace CookTorrance {
 
     
     __device__ float PDF(const Material &material, glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness) {
-        float pdfDiffuse  = max(0.0f, glm::dot(wi, n)) / glm::pi<float>();
+        float pdfDiffuse  = max(0.0f, glm::dot(wi, n)) * INV_PI;
         float pdfSpecular = PDF_GGX(wo, wi, n, roughness);
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);

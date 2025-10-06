@@ -11,15 +11,17 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
+#define INV_PI 0.3183098f
+
 namespace Lambert {
 
     __device__ glm::vec3 BRDF(glm::vec3 material_color) {
-        return material_color / glm::pi<float>();
+        return material_color * INV_PI;
     }
 
     __device__ float PDF(glm::vec3 sample_dir, glm::vec3 surface_normal) {
         float cosTheta = max(0.0f, glm::dot(sample_dir, surface_normal));
-        return cosTheta / glm::pi<float>();
+        return cosTheta * INV_PI;
     }
     
     __device__ void shadePathLambert(

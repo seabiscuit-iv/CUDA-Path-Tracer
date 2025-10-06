@@ -327,7 +327,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
         color = color / (color + glm::vec3(1.0f));
 
         //gamma correction
-        color = glm::pow(color, glm::vec3(1.0f / 2.2f));
+        color = glm::pow(color, glm::vec3(0.45f));
 
         image[iterationPath.pixelIndex] += iterationPath.color;
     }

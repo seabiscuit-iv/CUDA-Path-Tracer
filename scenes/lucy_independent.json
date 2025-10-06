@@ -1,11 +1,23 @@
 {
     "Materials":
     {
-        "light":
+        "light_key":
         {
-            "TYPE":"Emitting",
-            "RGB":[1.0, 1.0, 1.0],
-            "EMITTANCE":15.0
+            "TYPE": "Emitting",
+            "RGB": [1.0, 0.45, 0.45],
+            "EMITTANCE": 25.0
+        },
+        "light_fill":
+        {
+            "TYPE": "Emitting",
+            "RGB": [0.8, 0.9, 1.0],
+            "EMITTANCE": 10.0
+        },
+        "light_rim":
+        {
+            "TYPE": "Emitting",
+            "RGB": [1.0, 1.0, 1.0],
+            "EMITTANCE": 40.0
         },
         "diffuse_white":
         {
@@ -32,29 +44,29 @@
         {
             "TYPE":"Microfacet",
             "RGB":[0.98, 0.98, 0.98],
-            "ROUGHNESS": 0.4,
-            "METALLIC": 0.75
+            "ROUGHNESS":0.4,
+            "METALLIC":0.75
         },
         "microfacet_red":
         {
             "TYPE":"Microfacet",
             "RGB":[0.85, 0.35, 0.35],
-            "ROUGHNESS": 0.4,
-            "METALLIC": 0.1
+            "ROUGHNESS":0.4,
+            "METALLIC":0.1
         },
         "microfacet_green":
         {
             "TYPE":"Microfacet",
             "RGB":[0.35, 0.75, 0.55],
-            "ROUGHNESS": 0.3,
-            "METALLIC": 0.1
+            "ROUGHNESS":0.3,
+            "METALLIC":0.1
         },
         "microfacet_blue":
         {
             "TYPE":"Microfacet",
             "RGB":[0.35, 0.55, 0.75],
-            "ROUGHNESS": 0.7,
-            "METALLIC": 0.8
+            "ROUGHNESS":0.7,
+            "METALLIC":0.8
         }
     },
     "Camera":
@@ -71,19 +83,26 @@
     "Objects":
     [
         {
-            "TYPE":"cube",
-            "MATERIAL":"light",
-            "TRANS":[0.0,15.0,0.0],
-            "ROTAT":[0.0,0.0,0.0],
-            "SCALE":[3.0,0.3,3.0]
-        },
-        {
             "TYPE":"obj",
-            "FILE":"obj\\lucy_lowres.obj",
+            "FILE":"obj\\lucy.obj",
             "MATERIAL":"diffuse_white",
             "TRANS":[0.0,0.0,-4.0],
             "ROTAT":[0.0,180.0,0.0],
-            "SCALE":[0.7,0.7,0.7] 
+            "SCALE":[0.7,0.7,0.7]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"light_key",
+            "TRANS":[3.0,7.0,2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[0.4,0.4,0.4]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"light_fill",
+            "TRANS":[0.0,5.0,8.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[4.0,4.0,1.0]
         }
     ]
 }

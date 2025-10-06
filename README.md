@@ -201,4 +201,4 @@ In a naive path tracer, all path segments are processed each iteration, even tho
 
 ### Material Sorting
 
-When shading, different materials (Lambertian, Specular, Cook-Torrance, etc.) often follow distinct code paths, which can cause warp divergence in CUDA. **Material Sorting** groups path segments by their material type before shading, so threads within a warp execute similar instructions. 
+When shading, different materials (Lambertian, Specular, Cook-Torrance, etc.) often follow distinct code paths, which can cause warp divergence in CUDA. **Material Sorting** groups path segments by their material type before shading, so threads within a warp execute similar instructions. *This has noticable performance in scenes with lots of materials and BRDFs, but since we currently only have a few different materials, the performance impact is shadowed by the sorting overhead. This is a scale-focused solution.S*
