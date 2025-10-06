@@ -9,18 +9,18 @@ CUDA Path Tracer
 
 ## Table of Contents
 
-- Overview
-  - Code Structure
-- Features
-  - Materials
-    - Lambertian Diffuse
-    - Perfectly Specular
-    - Cook-Torrance PBR
-  - Scene and Geometry Handling
-    - Triangle Mesh Rendering
-    - OBJ Model Importing
-    - Custom Normal Buffers
-  - Acceleration Structures
+- [Overview](#overview)
+  - [Code Structure](#code-structure)
+- [Features](#features)
+  - [Materials](#materials)
+    - [Lambertian Diffuse](#lambertian-diffuse)
+    - [Perfectly Specular](#perfect-specular-reflection)
+    - [Cook-Torrance PBR](#cook-torrance-pbr-material)
+  - [Scene and Geometry Handling](#scene-and-geometry-handling)
+    - [Triangle Mesh Rendering](#triangle-mesh-rendering)
+    - [OBJ Model Importing](#obj-model-importing)
+    - [Custom Normal Buffers](#custom-normal-buffers)
+  - [Acceleration Structures](#acceleration-structures)
     - Bounding Volume Hierarchy
       - Construction
       - Traversal
@@ -113,3 +113,21 @@ Finally to combine these two, we use the material's metallic value to adjust the
 Combining these two gives us a standard PBR material that can be controlled by its albedo, roughness, and metallic values. 
 
 The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/cook_torrance.cu`. 
+
+## Scene and Geometry Handling
+
+### Triangle Mesh Rendering
+
+In order to support custom model loading, simple triangle mesh rendering was added early in the project, following the [Möller–Trumbore intersection algorithm](https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm). Originally this would naively loop through all triangles, but this system would eventually be replaced by a high-performant bounding volume hierarchy.
+
+### OBJ Model Importing
+
+For more customizable scenes, 3D models made in other programs can be imported and rendered through the `.obj` file format. To handle this, this project uses [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader), the files for which can be found in `src/tinyobj`. The program doesn't any pre-rendering input assembly in order to optimize GPU memory usage: both the vertex position data and triangle index buffers are pushed to the GPU exactly as they are read in.
+
+### Custom Normal Buffers
+
+The renderer also supports passing in custom vertex normals, which have no input assembly and are also accessed via a separate set of normal indices. The normals are interpolated with barycentric coordinates, allowing us to use models with smooth shading.
+
+
+## Acceleration Structures
+
