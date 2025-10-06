@@ -79,7 +79,7 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_white",
+            "MATERIAL":"diffuse_white",
             "TRANS":[0.0,0.0,0.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[10.0,0.01,10.0]
@@ -100,14 +100,14 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_red",
+            "MATERIAL":"diffuse_red",
             "TRANS":[-5.0,5.0,0.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[0.01,10.0,10.0]
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_blue",
+            "MATERIAL":"diffuse_green",
             "TRANS":[5.0,5.0,0.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[0.01,10.0,10.0]
@@ -115,7 +115,7 @@
         {
             "TYPE":"obj",
             "FILE":"obj\\dragon_highres.obj",
-            "MATERIAL":"microfacet_green",
+            "MATERIAL":"diffuse_white",
             "TRANS":[0.0,0.0,-1.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[0.7,0.7,0.7] 
