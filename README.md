@@ -21,10 +21,11 @@ CUDA Path Tracer
     - [OBJ Model Importing](#obj-model-importing)
     - [Custom Normal Buffers](#custom-normal-buffers)
   - [Acceleration Structures](#acceleration-structures)
-    - Bounding Volume Hierarchy
-      - Construction
-      - Traversal
-    - Surface Area Heuristic
+    - [Bounding Volume Hierarchy](#bounding-volume-hierarchy)
+      - [Construction](#construction)
+      - [Traversal](#traversal)
+    - [Surface Area Heuristic](#surface-area-heuristic)
+      - [Binning](#binning)
     - Traversal Optimizations
       - Min-distance Termination
       - Node Sorting
@@ -130,4 +131,40 @@ The renderer also supports passing in custom vertex normals, which have no input
 
 
 ## Acceleration Structures
+
+For triangle meshes and imported models, naive intersection testing consists of iterating and testing every triangle. While this is fine for small models, larger models can have upwards of 500K triangles, and this quickly becomes unsatisfiable. Efficient ray tracing relies on spatial acceleration structures to quickly eliminate large portions of the scene from intersection testing. This project implements a [Bounding Volume Hierarchy (BVH)](https://en.wikipedia.org/wiki/Bounding_volume_hierarchy) to achieve logarithmic traversal performance relative to the number of triangles. 
+
+### Bounding Volume Hierarchy
+
+The BVH organizes the geometry into a tree, where each leaf node represents a single triangle of our original mesh, and every other node is a axis-aligned bounding box (AABB) that encapsulates all of its children nodes. 
+
+#### Construction
+
+The BVH is constructed recursively by partitioning the primitives and sending them over to the left/right children nodes. The tree construction is rather [standard](https://en.wikipedia.org/wiki/Binary_tree), and room for optimization can mainly be found in the partitioning and storage approaches. Originally, we simply partitioned nodes down the center of the range, sending a near-equal amount to the left and right children. This resulted in a complete binary tree, which had optimal tree height. Another benefit to this method was the ability to store the tree is a heap-style array, where a node at index $i$ had children at $2i+1$ and $2i+2$. However, due to the nature of the BVH traversal algorithm, this resulted in a very unoptimal BVH as a whole. This method was eventually replaced with an [SAH](#surface-area-heuristic) based partition.
+
+#### Traversal
+
+During ray traversal, the BVH is explored top-down in a [depth-first search](https://en.wikipedia.org/wiki/Depth-first_search) manner. The goal is to track and find the primitive that is closest to the ray's origin. Ray-AABB intersections are tested first, and only the branches that intersect are recursively visited. Leaf nodes then perform ray-triangle intersection tests. A number of low-hanging fruits can be picked here to promote early branch pruning, detailed in #traversal-optimizations. 
+
+
+### Surface Area Heuristic
+
+The Surface Area Heuristic, or SAH, is a formula that estimates the **cost** of splitting a set of primitives into two child nodes by considering the surface areas of the resulting AABBs and their primitive counts.
+
+$$
+  C = C_{trav} + \frac{A_L}{A_P}N_L C_{L} + \frac{A_R}{A_P}N_R C_{R}
+$$
+- $C$ - total cost of this split
+- $A_L, A_R$ - Surface area of the left and right partitions bounding box
+- $N_L, N_R$ - Number of primitives in the left and right partition
+- $C_L, C_R$ - The cost of traversing left and right children
+
+This equation balances traversal speed against build cost, resulting in efficient hierarchies for complex meshes. Our goal when constructing our BVH is to **minimize** $C$, which would result in an optimal split. 
+
+To compute the SAH, we could loop through every possible split, of which there are $n$ for a single axis. However, since computing the SAH takes $O(n)$, the total BVH construction rumtime would be $O(n^3)$, which is unsatisfiable for large meshes. Therefore, we use a construction optimization called [binning](#binning).
+
+Furthermore, since we construct the tree top-down, it's impractical to compute $C_L$ and $C_R$. Therefore, we omit them from our SAH calculation (including $C_{trav}$ for consistency), and instead use a different [stack height optimization](#stack-height-optimization) to avoid blowing up our tree height.
+
+
+#### Binning
 
