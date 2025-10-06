@@ -185,5 +185,20 @@ Earlier, we mentioned that in our SAH calculation, we do not calculate $C_L$ and
 
 In order to defend against this, we can use a default case, where if the split point is in the top or bottom 15% of the range, we default to using a midpoint split. This is a quick and dirty solution to this problem, but it provides a good enough result for this project's needs. We can compute a midpoint split on our axis by performing a partition about the $\frac{n}{2}$th statistic. 
 
-This will guarantee that our tree height is no more than $\log _\frac{1}{1 - 0.15} n$, or $\log _{1.76} n$. For 2.5M triangles, this means our tree height is guarateed to be no more than 27. This is extremely important, because it allows us to create a constant-sized stack class (`src/stack.cu`) that will be stored in VPGRs rather than some paged memory module, creating noticeable performance gains.
+This will guarantee that our tree height is no more than $\log _\frac{1}{1 - 0.15} n$, or $\log _{1.176} n$. For 2.5M triangles, this means our tree height is guarateed to be no more than 100. This is extremely important, because it allows us to create a constant-sized stack class (`src/stack.cu`) that will be stored in VPGRs rather than some paged memory module, creating noticeable performance gains.
 
+
+## Rendering Pipeline Improvements
+
+This project implements several optimizations to improve GPU path tracing throughput and memory coherence. Two key techniques help minimize warp divergence and balance computational load across threads.
+
+### Terminated Path Partitioning
+
+In a naive path tracer, all path segments are processed each iteration, even those that have already terminated (e.g., after hitting a light or not intersecting anything). This wastes GPU lanes and reduces overall efficiency.
+
+**Terminated path partitioning** uses a parallel compaction step via Thrust to partition all active rays to appear before our dead rays in our path data structure. This allows us to reduce the number of blocks we push to the work queue each bounce iteration. This ensures that subsequent kernel launches only operate on active rays, improving occupancy and reducing divergence.
+
+
+### Material Sorting
+
+When shading, different materials (Lambertian, Specular, Cook-Torrance, etc.) often follow distinct code paths, which can cause warp divergence in CUDA. **Material Sorting** groups path segments by their material type before shading, so threads within a warp execute similar instructions. 
