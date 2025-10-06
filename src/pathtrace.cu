@@ -116,7 +116,7 @@ void pathtraceFree()
 * motion blur - jitter rays "in time"
 * lens effect - jitter ray origin positions based on a lens
 */
-__global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, PathSegment* pathSegments)
+__global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, PathSegment* __restrict__ pathSegments)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -158,10 +158,10 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 __global__ void computeIntersections(
     int depth,
     int num_paths,
-    PathSegment* pathSegments,
-    Geom* geoms,
+    PathSegment* __restrict__ pathSegments,
+    Geom* __restrict__ geoms,
     int geoms_size,
-    ShadeableIntersection* intersections)
+    ShadeableIntersection* __restrict__ intersections)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -224,7 +224,7 @@ __global__ void computeIntersections(
     }
 }
 
-__global__ void advancePathSegments(int num_paths, PathSegment* paths, ShadeableIntersection *intersections) {
+__global__ void advancePathSegments(int num_paths, PathSegment* __restrict__ paths, ShadeableIntersection* __restrict__ intersections) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_paths)
     {
@@ -287,7 +287,7 @@ __global__ void shadePath(
 }  
 
 
-__global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* paths, ShadeableIntersection *intersections, Material *materials) {
+__global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* __restrict__ paths, ShadeableIntersection* __restrict__ intersections, Material* __restrict__ materials) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_paths)
     {
@@ -314,7 +314,7 @@ __global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* pa
 
 
 // Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
+__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restrict__ iterationPaths)
 {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
