@@ -26,9 +26,7 @@ CUDA Path Tracer
       - [Traversal](#traversal)
     - [Surface Area Heuristic](#surface-area-heuristic)
       - [Binning](#binning)
-    - Traversal Optimizations
-      - Min-distance Termination
-      - Node Sorting
+      - [Traversal Optimizations](#traversal-optimizations)
     - Stack Height Optimization
   - Rendering Pipeline Improvements
     - Terminated Path Partitioning
@@ -144,7 +142,7 @@ The BVH is constructed recursively by partitioning the primitives and sending th
 
 #### Traversal
 
-During ray traversal, the BVH is explored top-down in a [depth-first search](https://en.wikipedia.org/wiki/Depth-first_search) manner. The goal is to track and find the primitive that is closest to the ray's origin. Ray-AABB intersections are tested first, and only the branches that intersect are recursively visited. Leaf nodes then perform ray-triangle intersection tests. A number of low-hanging fruits can be picked here to promote early branch pruning, detailed in #traversal-optimizations. 
+During ray traversal, the BVH is explored top-down in a [depth-first search](https://en.wikipedia.org/wiki/Depth-first_search) manner. The goal is to track and find the primitive that is closest to the ray's origin. Ray-AABB intersections are tested first, and only the branches that intersect are recursively visited. Leaf nodes then perform ray-triangle intersection tests. A number of low-hanging fruits can be picked here to promote early branch pruning, detailed in [traversal optimizations](#traversal-optimizations). 
 
 
 ### Surface Area Heuristic
@@ -161,10 +159,22 @@ $$
 
 This equation balances traversal speed against build cost, resulting in efficient hierarchies for complex meshes. Our goal when constructing our BVH is to **minimize** $C$, which would result in an optimal split. 
 
-To compute the SAH, we could loop through every possible split, of which there are $n$ for a single axis. However, since computing the SAH takes $O(n)$, the total BVH construction rumtime would be $O(n^3)$, which is unsatisfiable for large meshes. Therefore, we use a construction optimization called [binning](#binning).
+To compute the SAH, we could loop through every possible split, of which there are $n$ for a single axis. However, since computing the SAH takes $O(n)$, the total BVH construction rumtime would be $O(n^3\log n)$, which is unsatisfiable for large meshes. Therefore, we use a construction optimization called [binning](#binning).
 
 Furthermore, since we construct the tree top-down, it's impractical to compute $C_L$ and $C_R$. Therefore, we omit them from our SAH calculation (including $C_{trav}$ for consistency), and instead use a different [stack height optimization](#stack-height-optimization) to avoid blowing up our tree height.
 
 
 #### Binning
+
+Binning is a way to improve the speed of minimizing the SAH at every level. The naive way to minimize the SAH is to calculate it at the centroid of every primitive, since this represents every possible split that can be made along an axis. Instead of doing this, we instead compute the SAH at constant intervals, allowing us to "bin" the primitives into interavls and precompute the bounding box of each bin. This reduces our SAH calculating runtime to $O(n)$, and our total tree construction time to $O(n^2\log n)$.
+
+
+### Traversal Optimizations
+
+In our traversal algorithm, there are a number of quick and dirty optimizations we can make that will promote early branch pruning and have a strong impact on performance
+
+- **Min-Distance Termination**  
+If we intersect a bounding box, only traverse down if the intersection distance is closer than the current tracked primitive intersection.
+- **Node Sorting**  
+Sort the child nodes based on their bounding box intersection distances, promoting more min-distance termination
 
