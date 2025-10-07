@@ -3,7 +3,7 @@
     "C_Cpp.default.compilerPath": "cl.exe",
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
-        "args": ["scenes\\lucy_independent.json"]
+        "args": ["scenes\\dragon.json"]
     },
     "files.associations": {
         "array": "cpp",
