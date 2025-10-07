@@ -1,0 +1,186 @@
+{
+    "Materials":
+    {
+        "light":
+        {
+            "TYPE":"Emitting",
+            "RGB":[0.9, 0.8, 0.75],
+            "EMITTANCE":5.0
+        },
+        "diffuse_white":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.98, 0.98, 0.98]
+        },
+        "diffuse_red":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.85, 0.35, 0.35]
+        },
+        "diffuse_green":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.35, 0.85, 0.35]
+        },
+        "specular_white":
+        {
+            "TYPE":"Specular",
+            "RGB":[0.98, 0.98, 0.98],
+            "ROUGHNESS":0.0
+        },
+        "microfacet_white":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.90, 0.90, 0.9],
+            "ROUGHNESS": 0.25,
+            "METALLIC": 0.9
+        },
+        "diffuse_blue":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.65, 0.90, 0.98]
+        },
+        "diffuse_brown":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.85, 0.73, 0.63]
+        },
+        "microfacet_green":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.35, 0.85, 0.35],
+            "ROUGHNESS": 0.3,
+            "METALLIC": 0.8
+        },
+        "microfacet_red":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.85, 0.35, 0.35],
+            "ROUGHNESS": 0.25,
+            "METALLIC": 0.0
+        },
+        "hat_red":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.85, 0.35, 0.35],
+            "ROUGHNESS": 0.825,
+            "METALLIC": 0.25
+        },
+        "hat_white":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.98, 0.98, 0.98],
+            "ROUGHNESS": 0.25,
+            "METALLIC": 1.0
+        },
+        "hat_gray":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.65, 0.65, 0.65],
+            "ROUGHNESS": 0.15,
+            "METALLIC": 1.0
+        },
+        "hat_letter":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.98, 0.98, 0.98],
+            "ROUGHNESS": 0.0,
+            "METALLIC": 0.0
+        }
+    },
+    "Camera":
+    {
+        "RES":[800,800],
+        "FOVY":45.0,
+        "ITERATIONS":5000,
+        "DEPTH":8,
+        "FILE":"cornell",
+        "EYE":[5.0,-5.0,5.0],
+        "LOOKAT":[0.0,0.0,0.0],
+        "UP":[0.0,1.0,0.0]
+    },
+    "Objects":
+    [
+        {
+            "TYPE":"cube",
+            "MATERIAL":"light",
+            "TRANS":[0.0,10.0,0.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[3.0,1.0,3.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"microfacet_white",
+            "TRANS":[0.0,0.0,0.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[30.0,0.01,30.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"microfacet_white",
+            "TRANS":[0.0,10.0,0.0],
+            "ROTAT":[0.0,0.0,90.0],
+            "SCALE":[0.01,30.0,30.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"diffuse_white",
+            "TRANS":[0.0,5.0,-5.0],
+            "ROTAT":[0.0,90.0,0.0],
+            "SCALE":[0.01,10.0,30.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"microfacet_white",
+            "TRANS":[0.0,5.0,10.0],
+            "ROTAT":[0.0,90.0,0.0],
+            "SCALE":[0.01,10.0,30.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"diffuse_brown",
+            "TRANS":[-5.0,5.0,0.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[0.01,10.0,30.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"diffuse_white",
+            "TRANS":[15.0,5.0,0.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[0.01,10.0,30.0]
+        },
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\mario\\hat_base.obj",
+            "MATERIAL":"hat_red",
+            "TRANS":[0.0,0.0, 0.0],
+            "ROTAT":[0.0,45.0,0.0],
+            "SCALE":[1.0,1.0,1.0] 
+        },
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\mario\\hat_emblem_rim.obj",
+            "MATERIAL":"hat_white",
+            "TRANS":[0.0,0.0, 0.0],
+            "ROTAT":[0.0,45.0,0.0],
+            "SCALE":[1.0,1.0,1.0] 
+        },
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\mario\\hat_emblem_center.obj",
+            "MATERIAL":"hat_gray",
+            "TRANS":[0.0,0.0, 0.0],
+            "ROTAT":[0.0,45.0,0.0],
+            "SCALE":[1.0,1.0,1.0] 
+        },
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\mario\\hat_emblem_M.obj",
+            "MATERIAL":"hat_letter",
+            "TRANS":[0.0,0.0, 0.0],
+            "ROTAT":[0.0,45.0,0.0],
+            "SCALE":[1.0,1.0,1.0] 
+        }
+    ]
+}

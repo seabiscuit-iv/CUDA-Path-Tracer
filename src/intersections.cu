@@ -115,7 +115,7 @@ __host__ __device__ float sphereIntersectionTest(
 }
 
 
-#define USE_NORMAL_BUFFERS 0
+#define USE_NORMAL_BUFFERS 1
 
 
 __device__ float meshIntersectionTest(    
@@ -234,9 +234,9 @@ __device__ float meshIntersectionTest(
                 #if USE_NORMAL_BUFFERS
                     if (mesh.mesh.has_normal_buffers) {
                         // CALCULATE NORMALS FROM HERE
-                        glm::vec3 n0 = normals[triangles[tri].v_indices[0]];
-                        glm::vec3 n1 = normals[triangles[tri].v_indices[1]];
-                        glm::vec3 n2 = normals[triangles[tri].v_indices[2]];
+                        glm::vec3 n0 = normals[triangles[tri].n_indices[0]];
+                        glm::vec3 n1 = normals[triangles[tri].n_indices[1]];
+                        glm::vec3 n2 = normals[triangles[tri].n_indices[2]];
 
                         glm::vec3 barycentrics(u, v, (1.0f - u - v));
                         glm::vec3 normal = glm::normalize(barycentrics.x * n1 + barycentrics.y * n2 + barycentrics.z * n0);

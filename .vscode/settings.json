@@ -3,7 +3,7 @@
     "C_Cpp.default.compilerPath": "cl.exe",
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
-        "args": ["scenes\\monkey.json"]
+        "args": ["scenes\\mario.json"]
     },
     "files.associations": {
         "array": "cpp",
