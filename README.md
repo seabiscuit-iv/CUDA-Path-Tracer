@@ -7,6 +7,12 @@ CUDA Path Tracer
   * [LinkedIn](https://www.linkedin.com/in/saahil-g), [personal website](https://www.saahil-gupta.com)
 * Tested on: Windows 11 10.0.26100, AMD Ryzen 9 7940HS @ 4.0GHz 32GB, RTX 4060 Laptop GPU 8GB
 
+<figure style="text-align: center;">
+  <img src="img/lucy_2.png" alt="Lucy" width="400">
+  <figcaption>Stanford Lucy model, 28M triangles</figcaption>
+</figure>
+
+
 ## Table of Contents
 
 - [Overview](#overview)
