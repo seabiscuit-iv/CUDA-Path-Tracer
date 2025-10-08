@@ -105,6 +105,13 @@ The code for this material's BRDF, PDF, sampling and shading logic can be found 
 
 ### Perfect Specular Reflection
 
+<div align="center">
+
+![specular monkey](img/ultra_specular_monkey.png )
+<em>Suzanne Monkey, Perfectly Specular</em>
+
+</div>
+
 [Perfectly specular reflection](https://pbr-book.org/3ed-2018/Reflection_Models/Specular_Reflection_and_Transmission) is essentially a **mirror**, where any light that comes in is reflected perfectly across the surface normal and not distributed at all. As a result, this material has no editable properties outside of albedo.
 
 The PDF for a mirror would be infinity for the reflected direction of our view vector across the surface normal, and zero everywhere else. This is called a [Dirac delta distribution](https://en.wikipedia.org/wiki/Dirac_delta_function). Similarly, the BRDF ends up also being a Dirac delta distribution. We only trace the reflected ray (since every other ray has no contribution), and so in our code, we omit the infinite values and simply multiply by our surface color. Note that we don't need to multiply by the Lambertian term because the BRDF for perfect specular already includes the cosine implicitly in its definition of a Dirac delta.
@@ -112,6 +119,13 @@ The PDF for a mirror would be infinity for the reflected direction of our view v
 The code for this material's BRDF, PDF, sampling and shading logic can be found in `shaders/specular.cu`. 
 
 ### Cook-Torrance PBR Material
+
+<div align="center">
+
+![cook torrance pbr](img/microfacets_5000samp.png )
+<em>Metallic vs Non-metallic, increasing Roughness</em>
+
+</div>
 
 Lambertian and perfectly specular materials represent the two ends of the diffuse-specular spectrum of materials. However, most surfaces tend to fall somewhere in the middle, having a somewhat distributed yet still concentrated reflection lobe. This is what creates the rough and blurry reflections that are visible on polished and metallic surfaces.
 
