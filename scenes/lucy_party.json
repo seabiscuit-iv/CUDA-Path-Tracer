@@ -1,0 +1,251 @@
+{
+    "Materials":
+    {
+        "light":
+        {
+            "TYPE":"Emitting",
+            "RGB":[1.0, 1.0, 1.0],
+            "EMITTANCE":14.0
+        },
+        "party_light_green":
+        {
+            "TYPE":"Emitting",
+            "RGB":[0.35, 0.85, 0.35],
+            "EMITTANCE":14.0
+        },
+        "party_light_blue":
+        {
+            "TYPE":"Emitting",
+            "RGB":[0.35, 0.35, 0.85],
+            "EMITTANCE":14.0
+        },
+        "party_light_red":
+        {
+            "TYPE":"Emitting",
+            "RGB":[0.85, 0.35, 0.35],
+            "EMITTANCE":14.0
+        },
+        "party_light_pink":
+        {
+            "TYPE":"Emitting",
+            "RGB":[0.98, 0.60, 0.65],
+            "EMITTANCE":14.0
+        },
+        "diffuse_white":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.98, 0.98, 0.98]
+        },
+        "diffuse_lightblue":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.55, 0.80, 0.90]
+        },
+        "diffuse_red":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.85, 0.35, 0.35]
+        },
+        "diffuse_green":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.35, 0.85, 0.35]
+        },
+        "diffuse_gray":
+        {
+            "TYPE":"Diffuse",
+            "RGB":[0.25, 0.25, 0.25]
+        },
+        "roof_mf":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.25, 0.25, 0.25],
+            "ROUGHNESS":0.03,
+            "METALLIC":0.98
+        },
+        "mf_gray":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.25, 0.25, 0.25],
+            "ROUGHNESS":0.35,
+            "METALLIC":0.85
+        },
+        "mf_floor":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.25, 0.25, 0.25],
+            "ROUGHNESS":0.75,
+            "METALLIC":0.25
+        },
+        "specular_white":
+        {
+            "TYPE":"Specular",
+            "RGB":[0.98, 0.98, 0.98],
+            "ROUGHNESS":0.0
+        },
+        "microfacet_white":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.98, 0.98, 0.98],
+            "ROUGHNESS": 0.4,
+            "METALLIC": 0.75
+        },
+        "microfacet_red":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.85, 0.35, 0.35],
+            "ROUGHNESS": 0.4,
+            "METALLIC": 0.1
+        },
+        "microfacet_green":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.35, 0.75, 0.55],
+            "ROUGHNESS": 0.3,
+            "METALLIC": 0.1
+        },
+        "microfacet_blue":
+        {
+            "TYPE":"Microfacet",
+            "RGB":[0.35, 0.55, 0.75],
+            "ROUGHNESS": 0.7,
+            "METALLIC": 0.8
+        }
+    },
+    "Camera":
+    {
+        "RES":[800,800],
+        "FOVY":45.0,
+        "ITERATIONS":5000,
+        "DEPTH":8,
+        "FILE":"cornell",
+        "EYE":[0.0,5.0,8.5],
+        "LOOKAT":[0.0,5.0,0.0],
+        "UP":[0.0,1.0,0.0]
+    },
+    "Objects":
+    [
+        {
+            "TYPE":"cube",
+            "MATERIAL":"party_light_pink",
+            "TRANS":[-2.5,10.0,-2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[2.0,0.3,2.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"party_light_blue",
+            "TRANS":[2.5,10.0,-2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[2.0,0.3,2.0]
+        },
+
+        {
+            "TYPE":"cube",
+            "MATERIAL":"party_light_red",
+            "TRANS":[-2.5,10.0,2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[2.0,0.3,2.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"party_light_green",
+            "TRANS":[2.5,10.0,2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[2.0,0.3,2.0]
+        },
+
+        {
+            "TYPE":"cube",
+            "MATERIAL":"party_light_blue",
+            "TRANS":[-2.5,10.0,6.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[2.0,0.3,2.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"party_light_pink",
+            "TRANS":[2.5,10.0,6.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[2.0,0.3,2.0]
+        },
+
+
+
+        {
+            "TYPE":"cube",
+            "MATERIAL":"diffuse_gray",
+            "TRANS":[0.0,10.0,2.0],
+            "ROTAT":[0.0,0.0,90.0],
+            "SCALE":[0.01,15.0,15.0]
+        },
+        
+        {
+            "TYPE":"cube",
+            "MATERIAL":"mf_gray",
+            "TRANS":[0.0,0.0,2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[15.0,0.01,15.0]
+        },
+
+
+
+
+        {
+            "TYPE":"cube",
+            "MATERIAL":"mf_floor",
+            "TRANS":[0.0,5.0,-5.50],
+            "ROTAT":[0.0,90.0,0.0],
+            "SCALE":[0.01,10.0,15.0]
+        },        
+        {
+            "TYPE":"cube",
+            "MATERIAL":"mf_floor",
+            "TRANS":[0.0,5.0,9.50],
+            "ROTAT":[0.0,90.0,0.0],
+            "SCALE":[0.01,10.0,15.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"mf_floor",
+            "TRANS":[-7.50,5.0,2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[0.01,10.0,15.0]
+        },
+        {
+            "TYPE":"cube",
+            "MATERIAL":"mf_floor",
+            "TRANS":[7.50,5.0,2.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[0.01,10.0,15.0]
+        },
+
+
+        
+
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\lucy_lowres.obj",
+            "MATERIAL":"diffuse_lightblue",
+            "TRANS":[0.0,0.0,-2.0],
+            "ROTAT":[0.0,180.0,0.0],
+            "SCALE":[0.7,0.7,0.7] 
+        },
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\dragon_lowres.obj",
+            "MATERIAL":"microfacet_green",
+            "TRANS":[3.5,0.0,1.5],
+            "ROTAT":[0.0, 10.0, 0.0],
+            "SCALE":[0.35,0.35,0.35] 
+        },
+        {
+            "TYPE":"obj",
+            "FILE":"obj\\monkey.obj",
+            "MATERIAL":"microfacet_white",
+            "TRANS":[-3.5,0.5,0.0],
+            "ROTAT":[-55.0,35.0,35.0],
+            "SCALE":[1.5,1.5,1.5] 
+        }
+    ]
+}

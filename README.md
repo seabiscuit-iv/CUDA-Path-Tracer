@@ -122,7 +122,7 @@ The code for this material's BRDF, PDF, sampling and shading logic can be found 
 
 <div align="center">
 
-![cook torrance pbr](img/microfacets_5000samp.png )
+![cook torrance pbr](img/microfacet_balls_white.png )
 <em>Metallic vs Non-metallic, increasing Roughness</em>
 
 </div>
