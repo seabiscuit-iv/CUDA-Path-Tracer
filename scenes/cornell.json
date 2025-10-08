@@ -86,7 +86,7 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_white",
+            "MATERIAL":"diffuse_white",
             "TRANS":[0.0,5.0,-5.0],
             "ROTAT":[0.0,90.0,0.0],
             "SCALE":[0.01,10.0,10.0]
@@ -100,21 +100,21 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"microfacet_green",
+            "MATERIAL":"diffuse_green",
             "TRANS":[5.0,5.0,0.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[0.01,10.0,10.0]
         },
         {
             "TYPE":"sphere",
-            "MATERIAL":"microfacet_red",
+            "MATERIAL":"diffuse_white",
             "TRANS":[-2.0,4.0,-1.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[3.0,3.0,3.0] 
         },
         {
             "TYPE":"mesh",
-            "MATERIAL":"diffuse_red",
+            "MATERIAL":"diffuse_white",
             "TRANS":[2.0,3.0,-0.5],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[2.5,2.5,2.5],

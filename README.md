@@ -55,7 +55,7 @@ CUDA Path Tracer
 
 # Overview
 
-This project is a **CUDA-accelerated [path tracer](https://en.wikipedia.org/wiki/Path_tracing)** which simulates global illumination through physically-based lighting and material techniques, with the goal of generating photorealistic renders. It presents various features, including **physically-based materials**, **custom 3D model loading**, and an efficient **BVH geometry acceleration structure** with surface-area based construction for high-performance traversal. The renderer itself incorporates **stochastic sampled anti-aliasing**, **path partitioning** for active ray optimization, and various other rendering optimizations. These optimizations allow it to render extremely dense scenes like the **Stanford Dragon** (800K triangles) in complex lighting scenarios, all within a reasonable amount of time while maintaining physically accurate light transport. Most scenes converge at about **400 iterations**.
+This project is a **CUDA-accelerated [path tracer](https://en.wikipedia.org/wiki/Path_tracing)** which simulates global illumination through physically-based lighting and material techniques, with the goal of generating photorealistic renders. It presents various features, including **physically-based materials**, **custom 3D model loading**, and an efficient **BVH geometry acceleration structure** with surface-area based construction for high-performance traversal. The renderer itself incorporates **stochastic sampled anti-aliasing**, **path partitioning** for active ray optimization, and various other rendering optimizations. These optimizations allow it to render extremely dense scenes like the **Stanford Dragon** (800K triangles) in complex lighting scenarios, all within a reasonable amount of time while maintaining physically accurate light transport. Most scenes converge at about **400 iterations**, but for best results, it's good to let the path tracer run at least **5000 iterations**.
 
 ## Code Structure
 
@@ -88,6 +88,14 @@ This path tracer contains a number of advanced features to improve **visual fide
 ## Materials
 
 ### Lambertian Diffuse
+
+
+<div align="center">
+
+![dragon](img/dragon_5000samp.png)
+<em>Stanford Dragon 800K, Lambertian Diffuse</em>
+
+</div>
 
 A very simple diffuse material BRDF based on [lambertian reflectance](https://en.wikipedia.org/wiki/Lambertian_reflectance). The general idea behind the Lambert shading model is that illumination is inversely related to the cosine of the angle between the surface normal and the incoming light ray, and is independent of the azimuthal angle of the light ray and view ray. Some examples of materials represented well by Lambertian reflectance include **paper, concrete, wood, and paint**.
 
@@ -210,4 +218,9 @@ In a naive path tracer, all path segments are processed each iteration, even tho
 ### Material Sorting
 
 When shading, different materials (Lambertian, Specular, Cook-Torrance, etc.) often follow distinct code paths, which can cause warp divergence in CUDA. **Material Sorting** groups path segments by their material type before shading, so threads within a warp execute similar instructions. *This has noticable performance in scenes with lots of materials and BRDFs, but since we currently only have a few different materials, the performance impact is shadowed by the sorting overhead. This is a scale-focused solution.*
+
+
+<br/>
+
+# Renders
 
