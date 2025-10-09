@@ -30,7 +30,7 @@
 #define MATERIAL_SORTING 0  // enable this if you have a high number of materials
 
 // Set this to -1 when profiling off
-#define MAX_ITERATIONS -1
+#define MAX_ITERATIONS 2
 
 // Bump the shader version to recompile shaders. We need a better solution for this
 #define SHADER_VER 2.8
@@ -305,17 +305,19 @@ __global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* __
     ShadeableIntersection &intersection = intersections[idx];
     PathSegment &path = paths[idx];
 
+    thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+
     if (intersection.t > 0.0f)
     {
         Material &material = materials[intersection.materialId];
         if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
-            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection);
+            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
         } 
         else if (material.material_type == MaterialType::Specular) {
             PerfectSpecular::sampleMirror(path, intersection);
         }
         else if (material.material_type == MaterialType::Microfacet) {
-            CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness);
+            CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng);
         }
     }
 }

@@ -44,9 +44,7 @@ namespace Lambert {
 
 
 
-__device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, ShadeableIntersection &intersection) {
-        thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
-
+__device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, ShadeableIntersection &intersection, thrust::default_random_engine &rng) {
         glm::vec3 wo = -path.ray.direction;
         glm::vec3 wi;
 

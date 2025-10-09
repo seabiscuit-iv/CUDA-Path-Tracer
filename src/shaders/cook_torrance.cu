@@ -92,8 +92,8 @@ namespace CookTorrance {
         return glm::vec3(x, y, z);
     } 
 
-    __device__ void sampleGGX(PathSegment &path, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness) {
-        CREATE_RANDOM_ENGINE(iter, idx, depth, u01, rng);
+    __device__ void sampleGGX(PathSegment &path, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng) {
+        thrust::uniform_real_distribution<float> u01(0, 1);
 
         float x1 = u01(rng);
         float x2 = u01(rng);
@@ -122,8 +122,8 @@ namespace CookTorrance {
         path.sample_dir = wi;
     }
 
-    __device__ void sampleCookTorrance(PathSegment &path, Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness) {
-        CREATE_RANDOM_ENGINE(iter, idx, depth, u01, rng);
+    __device__ void sampleCookTorrance(PathSegment &path, Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng) {
+        thrust::uniform_real_distribution<float> u01(0, 1);
         float r = u01(rng);
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
@@ -131,7 +131,7 @@ namespace CookTorrance {
         float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
 
         if (r <= probSpecular) {
-            sampleGGX(path, idx, iter, depth, wo, n, roughness);
+            sampleGGX(path, idx, iter, depth, wo, n, roughness, rng);
         } else {
             glm::vec3 wo = -path.ray.direction;
             glm::vec3 wi;
