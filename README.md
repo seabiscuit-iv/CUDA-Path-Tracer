@@ -9,8 +9,8 @@ CUDA Path Tracer
 
 <div align="center">
 
-![lucy](img/lucy_2.png)
-<em>Stanford Lucy model, 28M triangles</em>
+![lucy](img/lucy_party_final.png)
+<em>"Lucy's Dance Party"</em>
 
 </div>
 

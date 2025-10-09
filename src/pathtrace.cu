@@ -27,7 +27,7 @@
 
 // CONFIGURATION
 #define STREAM_COMPACTION 1
-#define MATERIAL_SORTING 0  // enable this if you have a high number of materials
+#define MATERIAL_SORTING 1  // enable this if you have a high number of materials
 
 // Set this to -1 when profiling off
 #define MAX_ITERATIONS -1
@@ -76,8 +76,6 @@ static Geom* dev_geoms = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
-// TODO: static variables for device memory, any extra info you need, etc
-// ...
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
