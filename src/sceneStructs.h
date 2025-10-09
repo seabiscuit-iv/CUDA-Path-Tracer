@@ -115,7 +115,6 @@ struct PathSegment
     glm::vec3 throughput;
     glm::vec3 sample_dir;
     int pixelIndex;
-    bool hitEmissive = false;
     bool kill = false;
 };
 

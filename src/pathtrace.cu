@@ -30,7 +30,7 @@
 #define MATERIAL_SORTING 0  // enable this if you have a high number of materials
 
 // Set this to -1 when profiling off
-#define MAX_ITERATIONS 2
+#define MAX_ITERATIONS -1
 
 // Bump the shader version to recompile shaders. We need a better solution for this
 #define SHADER_VER 2.8
@@ -46,11 +46,20 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, g
         int index = x + (y * resolution.x);
         glm::vec3 pix = image[index];
 
-        glm::ivec3 color;
         float invIter = __frcp_rn(iter);
-        color.x = glm::clamp((int)(pix.x * invIter * 255.0), 0, 255);
-        color.y = glm::clamp((int)(pix.y * invIter * 255.0), 0, 255);
-        color.z = glm::clamp((int)(pix.z * invIter * 255.0), 0, 255);
+
+        pix = pix * invIter;
+        
+        // reinhard op
+        // pix = pix / (pix + glm::vec3(1.0f));
+
+        //gamma correction
+        // pix = glm::pow(pix, glm::vec3(0.45f));
+
+        glm::ivec3 color;
+        color.x = glm::clamp((int)(pix.x * 255.0), 0, 255);
+        color.y = glm::clamp((int)(pix.y * 255.0), 0, 255);
+        color.z = glm::clamp((int)(pix.z * 255.0), 0, 255);
 
         // Each thread writes one pixel location in the texture (textel)
         pbo[index].w = 0;
@@ -110,14 +119,7 @@ void pathtraceFree()
     checkCUDAError("pathtraceFree");
 }
 
-/**
-* Generate PathSegments with rays from the camera through the screen into the
-* scene, which is the first bounce of rays.
-*
-* Antialiasing - add rays for sub-pixel sampling
-* motion blur - jitter rays "in time"
-* lens effect - jitter ray origin positions based on a lens
-*/
+
 __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, PathSegment* __restrict__ pathSegments)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -143,22 +145,11 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - cam.up * cam.pixelLength.y * ((float(y) + x2) - (float)cam.resolution.y * 0.5f)
         );
 
-        segment.ray.inv_direction.x = __frcp_rn(segment.ray.direction.x);
-        segment.ray.inv_direction.y = __frcp_rn(segment.ray.direction.y);
-        segment.ray.inv_direction.z = __frcp_rn(segment.ray.direction.z);
-
-        segment.ray.sign.x = (segment.ray.inv_direction.x < 0) ? 1 : 0;
-        segment.ray.sign.y = (segment.ray.inv_direction.y < 0) ? 1 : 0;
-        segment.ray.sign.z = (segment.ray.inv_direction.z < 0) ? 1 : 0;
-
         segment.pixelIndex = index;
     }
 }
 
-// TODO:
-// computeIntersections handles generating ray intersections ONLY.
-// Generating new rays is handled in your shader(s).
-// Feel free to modify the code below.
+
 __global__ void computeIntersections(
     int depth,
     int num_paths,
@@ -229,81 +220,23 @@ __global__ void computeIntersections(
     }
 }
 
-__global__ void advancePathSegments(int num_paths, PathSegment* __restrict__ paths, ShadeableIntersection* __restrict__ intersections) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_paths)
-    {
-        return;
-    }
-
-    if (intersections[idx].t == -1.0f && !paths[idx].hitEmissive) {
-        paths[idx].kill = true;
-        return;
-    }
-
-    Ray &ray = paths[idx].ray;
-
-    ray.origin = getPointOnRay(ray, intersections[idx].t);
-    ray.direction = paths[idx].sample_dir;
-
-    ray.inv_direction.x = __frcp_rn(ray.direction.x);
-    ray.inv_direction.y = __frcp_rn(ray.direction.y);
-    ray.inv_direction.z = __frcp_rn(ray.direction.z);
-
-    ray.sign.x = (ray.inv_direction.x < 0) ? 1 : 0;
-    ray.sign.y = (ray.inv_direction.y < 0) ? 1 : 0;
-    ray.sign.z = (ray.inv_direction.z < 0) ? 1 : 0;
-}
-
 __global__ void shadePath(
     int iter,
     int num_paths,
-    ShadeableIntersection* __restrict__ shadeableIntersections,
     PathSegment* __restrict__ pathSegments,
     Material* __restrict__ materials,
+    ShadeableIntersection* __restrict__ shadeableIntersections,
     int depth
 )
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < num_paths)
-    {
-        ShadeableIntersection &intersection = shadeableIntersections[idx];
-        PathSegment &path = pathSegments[idx];
-        if (intersection.t > 0.0f) // if the intersection exists...
-        {
-            thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
-            thrust::uniform_real_distribution<float> u01(0, 1);
-
-            Material &material = materials[intersection.materialId];
-            glm::vec3 materialColor = material.color;
-
-            if (material.material_type == MaterialType::Emissive) {
-                path.color += path.throughput * material.emittance * material.color;
-                path.kill = true;
-            } 
-            else if (material.material_type == MaterialType::Diffuse) {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
-            } 
-            else if (material.material_type == MaterialType::Specular) {
-                PerfectSpecular::shadePathSpecular(path, material);
-            }
-            else if (material.material_type == MaterialType::Microfacet) {
-                CookTorrance::shadePathCookTorrance(intersection, path, material);
-            }
-        }
-    }
-}  
-
-
-__global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* __restrict__ paths, ShadeableIntersection* __restrict__ intersections, Material* __restrict__ materials) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_paths)
     {
         return;
     }
 
-    ShadeableIntersection &intersection = intersections[idx];
-    PathSegment &path = paths[idx];
+    ShadeableIntersection &intersection = shadeableIntersections[idx];
+    PathSegment &path = pathSegments[idx];
 
     thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
 
@@ -319,6 +252,29 @@ __global__ void getSampleDir(int num_paths, int iter, int depth, PathSegment* __
         else if (material.material_type == MaterialType::Microfacet) {
             CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng);
         }
+
+        if (material.material_type == MaterialType::Emissive) {
+            path.color += path.throughput * material.emittance * material.color;
+            path.kill = true;
+        } 
+        else if (material.material_type == MaterialType::Diffuse) {
+            Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
+        } 
+        else if (material.material_type == MaterialType::Specular) {
+            PerfectSpecular::shadePathSpecular(path, material);
+        }
+        else if (material.material_type == MaterialType::Microfacet) {
+            CookTorrance::shadePathCookTorrance(intersection, path, material);
+        }
+    }
+
+    if (intersection.t == -1.0f) {
+        path.kill = true;
+    }
+    else {
+        Ray &ray = path.ray;
+        ray.origin = getPointOnRay(ray, intersection.t);
+        ray.direction = path.sample_dir;
     }
 }
 
@@ -332,19 +288,6 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
     {
         PathSegment iterationPath = iterationPaths[index];
         glm::vec3 color = iterationPath.color;
-
-        //reinhard tonemap
-
-        glm::vec3 tonemap;
-        tonemap.x = __frcp_rn(color.r + 1.0f);
-        tonemap.y = __frcp_rn(color.g + 1.0f);
-        tonemap.z = __frcp_rn(color.b + 1.0f);
-
-        color = color * tonemap;
-
-        //gamma correction
-        color = glm::pow(color, glm::vec3(0.45f));
-
         image[iterationPath.pixelIndex] += iterationPath.color;
     }
 }
@@ -425,44 +368,18 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             );
         #endif
 
-        getSampleDir<<<numblocksPathSegmentTracing, blockSize1d>>> (
-            num_paths, 
-            iter, 
-            depth, 
-            dev_paths, 
-            dev_intersections,
-            dev_materials
-        );
-        checkCUDAError("sample hemisphere");
-
-        // TODO:
-        // --- Shading Stage ---
-        // Shade path segments based on intersections and generate new rays by
-        // evaluating the BSDF.
-        // Start off with just a big kernel that handles all the different
-        // materials you have in the scenefile.
-        // TODO: compare between directly shading the path segments and shading
-        // path segments that have been reshuffled to be contiguous in memory.
-
         shadePath<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
-            dev_intersections,
             dev_paths,
             dev_materials,
+            dev_intersections,
             depth
         );
 
         if (depth == traceDepth) {
             iterationComplete = true; // TODO: should be based off stream compaction results.
         }
-
-        advancePathSegments<<<numblocksPathSegmentTracing, blockSize1d>>>(
-            num_paths,
-            dev_paths,
-            dev_intersections
-        );
-        checkCUDAError("advance path segments");
 
         #if STREAM_COMPACTION
             auto new_end = thrust::partition(dPtr(dev_paths), dPtr(dev_paths) + num_paths, path_terminated());

@@ -415,8 +415,15 @@ void saveImage()
         for (int y = 0; y < height; y++)
         {
             int index = x + (y * width);
-            glm::vec3 pix = renderState->image[index];
-            img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+            glm::vec3 pix = renderState->image[index] / samples;
+
+            //reinhard op
+            // pix = pix / (pix + glm::vec3(1.0f));
+
+            //gamma correction
+            // pix = glm::pow(pix, glm::vec3(0.45f));
+
+            img.setPixel(width - 1 - x, y, pix);
         }
     }
 
