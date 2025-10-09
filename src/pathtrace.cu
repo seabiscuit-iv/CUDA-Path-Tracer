@@ -16,6 +16,7 @@
 #include "utilities.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "stack.h"
 
 #include "common.cu"
 
@@ -28,11 +29,14 @@
 #define STREAM_COMPACTION 1
 #define MATERIAL_SORTING 0  // enable this if you have a high number of materials
 
+// Set this to -1 when profiling off
+#define MAX_ITERATIONS -1
+
 // Bump the shader version to recompile shaders. We need a better solution for this
 #define SHADER_VER 2.8
 
 //Kernel that writes the image to the OpenGL PBO directly.
-__global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
+__global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, glm::vec3* image)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -43,9 +47,10 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm
         glm::vec3 pix = image[index];
 
         glm::ivec3 color;
-        color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
-        color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
-        color.z = glm::clamp((int)(pix.z / iter * 255.0), 0, 255);
+        float invIter = __frcp_rn(iter);
+        color.x = glm::clamp((int)(pix.x * invIter * 255.0), 0, 255);
+        color.y = glm::clamp((int)(pix.y * invIter * 255.0), 0, 255);
+        color.z = glm::clamp((int)(pix.z * invIter * 255.0), 0, 255);
 
         // Each thread writes one pixel location in the texture (textel)
         pbo[index].w = 0;
@@ -91,19 +96,16 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
     cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
-    // TODO: initialize any extra device memeory you need
-
     checkCUDAError("pathtraceInit");
 }
 
 void pathtraceFree()
 {
-    cudaFree(dev_image);  // no-op if dev_image is null
+    cudaFree(dev_image);
     cudaFree(dev_paths);
     cudaFree(dev_geoms);
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
-    // TODO: clean up any extra device memory you created
 
     checkCUDAError("pathtraceFree");
 }
@@ -141,7 +143,9 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - cam.up * cam.pixelLength.y * ((float(y) + x2) - (float)cam.resolution.y * 0.5f)
         );
 
-        segment.ray.inv_direction = glm::vec3(1.0f) / segment.ray.direction;
+        segment.ray.inv_direction.x = __frcp_rn(segment.ray.direction.x);
+        segment.ray.inv_direction.y = __frcp_rn(segment.ray.direction.y);
+        segment.ray.inv_direction.z = __frcp_rn(segment.ray.direction.z);
 
         segment.ray.sign.x = (segment.ray.inv_direction.x < 0) ? 1 : 0;
         segment.ray.sign.y = (segment.ray.inv_direction.y < 0) ? 1 : 0;
@@ -158,8 +162,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 __global__ void computeIntersections(
     int depth,
     int num_paths,
-    PathSegment* __restrict__ pathSegments,
-    Geom* __restrict__ geoms,
+    const PathSegment* __restrict__ pathSegments,
+    const Geom* __restrict__ geoms,
     int geoms_size,
     ShadeableIntersection* __restrict__ intersections)
 {
@@ -167,7 +171,8 @@ __global__ void computeIntersections(
 
     if (path_index < num_paths)
     {
-        PathSegment pathSegment = pathSegments[path_index];
+        const PathSegment pathSegment = pathSegments[path_index];
+        ShadeableIntersection isect = intersections[path_index];
 
         float t;
         glm::vec3 intersect_point;
@@ -179,28 +184,26 @@ __global__ void computeIntersections(
         glm::vec3 tmp_intersect;
         glm::vec3 tmp_normal;
 
-        // naive parse through global geoms
-
         for (int i = 0; i < geoms_size; i++)
         {
-            Geom& geom = geoms[i];
+            const Geom &geom = geoms[i];
 
             if (geom.type == CUBE)
             {
+                // 94 vgprs
                 t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
             }
             else if (geom.type == SPHERE)
             {
-                // t = spherSeIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                // 78 vgprs
+                t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
             }
             else if (geom.type == MESH)
             {
+                // 80 VGPRs
                 t = meshIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
             }
-            // TODO: add more intersection tests here... triangle? metaball? CSG?
 
-            // Compute the minimum t from the intersection tests to determine what
-            // scene geometry object was hit first.
             if (t > 0.0f && t_min > t)
             {
                 t_min = t;
@@ -212,15 +215,17 @@ __global__ void computeIntersections(
 
         if (hit_geom_index == -1)
         {
-            intersections[path_index].t = -1.0f;
+            isect.t = -1.0f;
         }
         else
         {
             // The ray hits something
-            intersections[path_index].t = t_min;
-            intersections[path_index].materialId = geoms[hit_geom_index].materialid;
-            intersections[path_index].surfaceNormal = normal;
+            isect.t = t_min;
+            isect.materialId = geoms[hit_geom_index].materialid;
+            isect.surfaceNormal = normal;
         }
+
+        intersections[path_index] = isect;
     }
 }
 
@@ -240,7 +245,10 @@ __global__ void advancePathSegments(int num_paths, PathSegment* __restrict__ pat
 
     ray.origin = getPointOnRay(ray, intersections[idx].t);
     ray.direction = paths[idx].sample_dir;
-    ray.inv_direction = glm::vec3(1.0f) / ray.direction;
+
+    ray.inv_direction.x = __frcp_rn(ray.direction.x);
+    ray.inv_direction.y = __frcp_rn(ray.direction.y);
+    ray.inv_direction.z = __frcp_rn(ray.direction.z);
 
     ray.sign.x = (ray.inv_direction.x < 0) ? 1 : 0;
     ray.sign.y = (ray.inv_direction.y < 0) ? 1 : 0;
@@ -324,7 +332,13 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
         glm::vec3 color = iterationPath.color;
 
         //reinhard tonemap
-        color = color / (color + glm::vec3(1.0f));
+
+        glm::vec3 tonemap;
+        tonemap.x = __frcp_rn(color.r + 1.0f);
+        tonemap.y = __frcp_rn(color.g + 1.0f);
+        tonemap.z = __frcp_rn(color.b + 1.0f);
+
+        color = color * tonemap;
 
         //gamma correction
         color = glm::pow(color, glm::vec3(0.45f));
@@ -375,6 +389,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     bool iterationComplete = false;
     while (!iterationComplete)
     {
+        if (iter == MAX_ITERATIONS) {
+            exit(0);
+        }
+
         // if (iter == 1) {
             // printf("NumPaths: %d\n", num_paths);
         // }
@@ -468,7 +486,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     ///////////////////////////////////////////////////////////////////////////
 
     // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, float(iter), dev_image);
 
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_image,

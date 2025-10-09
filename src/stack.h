@@ -1,11 +1,15 @@
 #pragma once
 
-#define STACK_MAX 100
+#define STACK_MAX 32
 
 struct Stack {
     int data[STACK_MAX];
+    char curr;
 
-    int curr = -1;
+    
+    __host__ __device__ void init() {
+        curr = -1;
+    }
 
     __host__ __device__ bool isEmpty();
     __host__ __device__ void push(int v);

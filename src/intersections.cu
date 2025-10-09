@@ -2,8 +2,8 @@
 #include "stack.h"
 #include "pathtrace.h"
 
-__host__ __device__ float boxIntersectionTest(
-    Geom &box,
+__device__ float boxIntersectionTest(
+    const Geom &box,
     Ray r,
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
@@ -11,51 +11,62 @@ __host__ __device__ float boxIntersectionTest(
 {
     Ray q;
     q.origin    =                multiplyMV(box.inverseTransform, glm::vec4(r.origin   , 1.0f));
-    q.direction = glm::normalize(multiplyMV(box.inverseTransform, glm::vec4(r.direction, 0.0f)));
+    q.direction = multiplyMV(box.inverseTransform, glm::vec4(r.direction, 0.0f));
+    
+    q.inv_direction.x = __frcp_rn(q.direction.x);
+    q.inv_direction.y = __frcp_rn(q.direction.y);
+    q.inv_direction.z = __frcp_rn(q.direction.z);
 
-    float tmin = -1e38f;
-    float tmax = 1e38f;
-    glm::vec3 tmin_n;
-    glm::vec3 tmax_n;
-    for (int xyz = 0; xyz < 3; ++xyz)
-    {
-        float qdxyz = q.direction[xyz];
-        /*if (glm::abs(qdxyz) > 0.00001f)*/
-        {
-            float t1 = (-0.5f - q.origin[xyz]) / qdxyz;
-            float t2 = (+0.5f - q.origin[xyz]) / qdxyz;
-            float ta = glm::min(t1, t2);
-            float tb = glm::max(t1, t2);
-            glm::vec3 n;
-            n[xyz] = t2 < t1 ? +1 : -1;
-            if (ta > 0 && ta > tmin)
-            {
-                tmin = ta;
-                tmin_n = n;
-            }
-            if (tb < tmax)
-            {
-                tmax = tb;
-                tmax_n = n;
-            }
-        }
+    q.sign.x = (q.inv_direction.x < 0.0) ? 1 : 0;
+    q.sign.y = (q.inv_direction.y < 0.0) ? 1 : 0;
+    q.sign.z = (q.inv_direction.z < 0.0) ? 1 : 0;
+
+    glm::vec3 bounds[2] = { glm::vec3(-0.5), glm::vec3(0.5) }; 
+    
+    float t_min, t_max;
+    int hit_axis = 0; // 0=x, 1=y, 2=z
+    
+    t_min = (bounds[q.sign.x].x - q.origin.x) * q.inv_direction.x;
+    t_max = (bounds[1 - q.sign.x].x - q.origin.x) * q.inv_direction.x;
+
+    float t_ymin = (bounds[q.sign.y].y - q.origin.y) * q.inv_direction.y;
+    float t_ymax = (bounds[1 - q.sign.y].y - q.origin.y) * q.inv_direction.y;
+
+    if (t_min > t_ymax || t_ymin > t_max) {
+        return -1.0;
+    }
+    if (t_ymin > t_min) {
+        t_min = t_ymin; 
+        hit_axis = 1; 
+    }
+    if (t_ymax < t_max) {
+        t_max = t_ymax;
     }
 
-    if (tmax >= tmin && tmax > 0)
-    {
+    float t_zmin = (bounds[q.sign.z].z - q.origin.z) * q.inv_direction.z;
+    float t_zmax = (bounds[1 - q.sign.z].z - q.origin.z) * q.inv_direction.z;
+
+    if (t_min > t_zmax || t_zmin > t_max) return -1.0;
+    if (t_zmin > t_min) { t_min = t_zmin; hit_axis = 2; }
+
+    if (t_max < 0.0f) return -1.0;
+    
+    if (t_min < 0.0f) {
+        t_min = t_max;
+        outside = false;
+    } else {
         outside = true;
-        if (tmin <= 0)
-        {
-            tmin = tmax;
-            tmin_n = tmax_n;
-            outside = false;
-        }
-        intersectionPoint = multiplyMV(box.transform, glm::vec4(getPointOnRay(q, tmin), 1.0f));
-        normal = glm::normalize(multiplyMV(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
-        return glm::length(r.origin - intersectionPoint);
     }
 
-    return -1;
+    glm::vec3 N = glm::vec3(0.0f);
+    if (hit_axis == 0) N.x = q.sign.x == 1 ? 1.0f : -1.0f;
+    if (hit_axis == 1) N.y = q.sign.y == 1 ? 1.0f : -1.0f;
+    if (hit_axis == 2) N.z = q.sign.z == 1 ? 1.0f : -1.0f;
+
+    intersectionPoint = multiplyMV(box.transform, glm::vec4(getPointOnRay(q, t_min), 1.0f));
+    normal = glm::normalize(multiplyMV(box.invTranspose, glm::vec4(N, 0.0f)));
+
+    return t_min;
 }
 
 __host__ __device__ float sphereIntersectionTest(
@@ -115,11 +126,64 @@ __host__ __device__ float sphereIntersectionTest(
 }
 
 
+__host__ __device__ float sphereIntersectionTest(
+    const Geom &sphere,
+    const Ray r,
+    glm::vec3 &intersectionPoint,
+    glm::vec3 &normal,
+    bool &outside)
+{
+    const float radius = 0.5f;
+
+    // Transform ray into object space
+    glm::vec3 ro = glm::vec3(multiplyMV(sphere.inverseTransform, glm::vec4(r.origin, 1.0f)));
+    glm::vec3 rd = glm::vec3(multiplyMV(sphere.inverseTransform, glm::vec4(r.direction, 0.0f)));
+
+    float b = glm::dot(ro, rd);
+    float c = glm::dot(ro, ro) - radius * radius;
+    float disc = b * b - c;
+
+    if (disc < 0.0f) return -1.0f;
+
+    float sqrtDisc = sqrtf(disc);
+    float t1 = -b - sqrtDisc;
+    float t2 = -b + sqrtDisc;
+
+    float t;
+    if (t1 > 0.0f) {
+        t = t1;
+        outside = true;
+    } else if (t2 > 0.0f) {
+        t = t2;
+        outside = false;
+    } else {
+        return -1.0f;
+    }
+
+    // Compute intersection in object space
+    glm::vec3 p = ro + t * rd;
+
+    // Transform back to world space
+    intersectionPoint = glm::vec3(multiplyMV(sphere.transform, glm::vec4(p, 1.0f)));
+
+    // Compute normal
+    normal = glm::vec3(multiplyMV(sphere.invTranspose, glm::vec4(p, 0.0f)));
+    normal = glm::normalize(normal);
+    if (!outside) normal = -normal;
+
+    // Return distance in world space (can also just return t if ray directions are normalized)
+    return glm::length(r.origin - intersectionPoint);
+}
+
+
+
+
+
 #define USE_NORMAL_BUFFERS 1
 
 
 __device__ float meshIntersectionTest(    
-    Geom &mesh,
+    const Geom &mesh,
     Ray r,
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
@@ -127,12 +191,13 @@ __device__ float meshIntersectionTest(
 {
     Ray r_ws = r;   
 
-    
-
     r.origin = glm::vec3(mesh.inverseTransform * glm::vec4(r.origin, 1.0f));
     r.direction = glm::vec3(mesh.inverseTransform * glm::vec4(r.direction, 0.0f));
 
-    r.inv_direction = glm::vec3(1.0f) / r.direction;
+    r.inv_direction.x = __frcp_rn(r.direction.x);
+    r.inv_direction.y = __frcp_rn(r.direction.y);
+    r.inv_direction.z = __frcp_rn(r.direction.z);
+
     r.sign.x = (r.inv_direction.x < 0.0f) ? 1 : 0;
     r.sign.y = (r.inv_direction.y < 0.0f) ? 1 : 0;
     r.sign.z = (r.inv_direction.z < 0.0f) ? 1 : 0;
@@ -142,6 +207,7 @@ __device__ float meshIntersectionTest(
     BVHNode* bvh = mesh.mesh.bvh.dev_bvh;
     
     Stack dfs_stack;
+    dfs_stack.init();
     dfs_stack.push(0);
 
     float epsilon = (float)(1.1920929E-7F);
@@ -190,46 +256,43 @@ __device__ float meshIntersectionTest(
             int tri = bvh[bvh_idx].tri_index;
 
             glm::vec3 a = verts[triangles[tri].v_indices[0]];
-            glm::vec3 b = verts[triangles[tri].v_indices[1]];
-            glm::vec3 c = verts[triangles[tri].v_indices[2]];
 
-            glm::vec3 edge1 = b - a;
-            glm::vec3 edge2 = c - a;
+            glm::vec3 edge1 = verts[triangles[tri].v_indices[1]] - a;
+            glm::vec3 edge2 = verts[triangles[tri].v_indices[2]] - a;
 
-            glm::vec3 r_cross_e2 = glm::cross(r.direction, edge2);
-            float det = glm::dot(edge1, r_cross_e2);
+            glm::vec3 cross = glm::cross(r.direction, edge2);
+            float det = glm::dot(edge1, cross);
 
             if (det > -epsilon && det < epsilon) {
                 continue;
             }
 
             float inv_det = __frcp_rn(det);
-            glm::vec3 s = r.origin - a;
-            float u = inv_det * glm::dot(s, r_cross_e2);
+            a = r.origin - a;
+            float u = inv_det * glm::dot(a, cross);
 
             if ((u < 0 && glm::abs(u) > epsilon) || (u > 1 && glm::abs(u-1) > epsilon)) {
                 continue;
             }
 
-            glm::vec3 s_cross_e1 = glm::cross(s, edge1);
-            float v = inv_det * glm::dot(r.direction, s_cross_e1);
+            cross = glm::cross(a, edge1);
+            float v = inv_det * glm::dot(r.direction, cross);
 
             if ((v < 0 && glm::abs(v) > epsilon) || (u + v > 1 && glm::abs(u + v - 1) > epsilon)) {
                 continue;
             }
 
-            float t = inv_det * glm::dot(edge2,  s_cross_e1);
+            float t = inv_det * glm::dot(edge2,  cross);
 
-            glm::vec3 pos;
             if (t > epsilon) {
-                pos = r.origin + t * r.direction;
+                cross = r.origin + t * r.direction;
             } else {
                 continue;
             }
 
             if (min_t < 0 || t < min_t ) {
                 min_t = t;
-                min_isect_point = pos;
+                min_isect_point = cross;
 
                 #if USE_NORMAL_BUFFERS
                     if (mesh.mesh.has_normal_buffers) {
