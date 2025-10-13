@@ -80,3 +80,9 @@ __device__ float meshIntersectionTest(
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
     bool &outside );
+
+    
+__device__ int bvhCountHits(    
+    const Geom &mesh,
+    Ray r
+);

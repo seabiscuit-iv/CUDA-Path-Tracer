@@ -39,6 +39,8 @@
 // Bump the shader version to recompile shaders. We need a better solution for this
 #define SHADER_VER 2.8
 
+#define DRAW_BVH 1
+
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, glm::vec3* image)
 {
@@ -466,6 +468,39 @@ struct sort_rays_morton {
 };
 
 
+
+__global__ void drawBVH(
+    int depth,
+    int num_paths,
+    PathSegment* __restrict__ pathSegments,
+    const Geom* __restrict__ geoms,
+    int geoms_size,
+    ShadeableIntersection* __restrict__ intersections)
+{
+    int path_index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (path_index < num_paths)
+    {
+        PathSegment &pathSegment = pathSegments[path_index];
+
+        int count = 0;
+
+        for (int i = 0; i < geoms_size; i++)
+        {
+            const Geom &geom = geoms[i];
+
+            if (geom.type == MESH)
+            {
+                count += bvhCountHits(geom, pathSegment.ray);
+            }
+        }
+
+        pathSegment.color += float(count) * glm::vec3(0.001f);
+    }
+}
+
+
+
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
     const int traceDepth = hst_scene->state.traceDepth;
@@ -564,48 +599,60 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             cudaTimer.record(fmt::format("Sort Mesh Hits Morton, Iter {}", depth+1));
         #endif
 
-        // tracing
-        computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
-            depth,
-            num_paths,
-            dev_paths_sorted,
-            dev_geoms,
-            hst_scene->geoms.size(),
-            dev_intersections
-        );
-        checkCUDAError("compute intersections");
-        depth++;
 
-        cudaTimer.record(fmt::format("Compute Intersections, Iter {}", depth));
-
-        #if MATERIAL_SORTING
-            thrust::sort_by_key(
-                thrust::device,
-                dev_intersections,
-                dev_intersections + num_paths,
+        #if DRAW_BVH
+            drawBVH<<<numblocksPathSegmentTracing, blockSize1d>>> (
+                depth,
+                num_paths,
                 dev_paths_sorted,
-                sort_materials()
+                dev_geoms,
+                hst_scene->geoms.size(),
+                dev_intersections
+            );
+        #else
+            // tracing
+            computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
+                depth,
+                num_paths,
+                dev_paths_sorted,
+                dev_geoms,
+                hst_scene->geoms.size(),
+                dev_intersections
+            );
+            checkCUDAError("compute intersections");
+            depth++;
+
+            cudaTimer.record(fmt::format("Compute Intersections, Iter {}", depth));
+
+            #if MATERIAL_SORTING
+                thrust::sort_by_key(
+                    thrust::device,
+                    dev_intersections,
+                    dev_intersections + num_paths,
+                    dev_paths_sorted,
+                    sort_materials()
+                );
+
+                cudaTimer.record(fmt::format("Material Sorting, Iter %i", depth));
+            #endif
+
+            shadePath<<<numblocksPathSegmentTracing, blockSize1d>>>(
+                iter,
+                num_paths,
+                dev_paths_sorted,
+                dev_materials,
+                dev_intersections,
+                depth
             );
 
-            cudaTimer.record(fmt::format("Material Sorting, Iter %i", depth));
+            cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));
         #endif
-
-        shadePath<<<numblocksPathSegmentTracing, blockSize1d>>>(
-            iter,
-            num_paths,
-            dev_paths_sorted,
-            dev_materials,
-            dev_intersections,
-            depth
-        );
-
-        cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));
 
         if (depth == traceDepth) {
             iterationComplete = true; // TODO: should be based off stream compaction results.
         }
 
-        #if STREAM_COMPACTION
+        #if STREAM_COMPACTION && !DRAW_BVH
             auto new_end = thrust::partition(dPtr(dev_paths_sorted), dPtr(dev_paths_sorted) + num_paths, path_terminated());
             last_num_paths = num_paths;
             num_paths = new_end - dPtr(dev_paths_sorted);
@@ -624,6 +671,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         }
 
         cudaTimer.record(fmt::format("End, Iter {}", depth));
+
+        #if DRAW_BVH
+            break;
+        #endif
     }
     
     cudaTimer.report();
