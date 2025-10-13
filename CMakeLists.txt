@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(cis565_path_tracer LANGUAGES CUDA CXX)
 
+include(FetchContent)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
@@ -50,6 +52,7 @@ include_directories(${GLM_INCLUDE_DIRS})
 
 set(headers
     src/image.h
+    src/cuda_timer.h
     src/interactions.h
     src/intersections.h
     src/glslUtility.hpp
@@ -64,6 +67,7 @@ set(headers
 
 set(sources
     src/main.cpp
+    src/cuda_timer.cu
     src/stb.cpp
     src/image.cpp
     src/glslUtility.cpp
@@ -116,6 +120,17 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     ${GL_LIBRARIES}
     #stream_compaction  # TODO: uncomment if using your stream compaction
 )
+
+
+FetchContent_Declare(
+  fmt
+  GIT_REPOSITORY https://github.com/fmtlib/fmt
+  GIT_TAG        e69e5f977d458f2650bb346dadf2ad30c5320281) # 10.2.1
+FetchContent_MakeAvailable(fmt)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} fmt::fmt)
+
+
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES native)
 

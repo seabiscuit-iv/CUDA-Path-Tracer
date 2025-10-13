@@ -8,6 +8,7 @@
 #include <thrust/remove.h>
 #include <thrust/partition.h>
 #include <thrust/device_vector.h>
+#include <thrust/gather.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -17,6 +18,9 @@
 #include "intersections.h"
 #include "interactions.h"
 #include "stack.h"
+#include "cuda_timer.h"
+
+#include <fmt/core.h>
 
 #include "common.cu"
 
@@ -27,7 +31,7 @@
 
 // CONFIGURATION
 #define STREAM_COMPACTION 1
-#define MATERIAL_SORTING 1  // enable this if you have a high number of materials
+#define MATERIAL_SORTING 0  // enable this if you have a high number of materials
 
 // Set this to -1 when profiling off
 #define MAX_ITERATIONS -1
@@ -74,8 +78,13 @@ static GuiDataContainer* guiData = NULL;
 static glm::vec3* dev_image = NULL;
 static Geom* dev_geoms = NULL;
 static Material* dev_materials = NULL;
-static PathSegment* dev_paths = NULL;
+static PathSegment* dev_paths_A = NULL;
+static PathSegment* dev_paths_B = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
+
+static uint32_t* dev_morton_codes;
+static bool* dev_hit_geom;
+static int* dev_path_scatter_buf;
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
@@ -92,7 +101,8 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
 
-    cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
+    cudaMalloc(&dev_paths_A, pixelcount * sizeof(PathSegment));
+    cudaMalloc(&dev_paths_B, pixelcount * sizeof(PathSegment));
 
     cudaMalloc(&dev_geoms, scene->geoms.size() * sizeof(Geom));
     cudaMemcpy(dev_geoms, scene->geoms.data(), scene->geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
@@ -103,16 +113,27 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
     cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
+    cudaMalloc(&dev_morton_codes, pixelcount * sizeof(uint32_t));
+
+    cudaMalloc(&dev_hit_geom, pixelcount * sizeof(bool));
+
+    cudaMalloc(&dev_path_scatter_buf, pixelcount * sizeof(int));
+
     checkCUDAError("pathtraceInit");
 }
 
 void pathtraceFree()
 {
     cudaFree(dev_image);
-    cudaFree(dev_paths);
+    cudaFree(dev_paths_A);
+    cudaFree(dev_paths_B);
     cudaFree(dev_geoms);
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
+
+    cudaFree(dev_morton_codes);
+    cudaFree(dev_hit_geom);
+    cudaFree(dev_path_scatter_buf);
 
     checkCUDAError("pathtraceFree");
 }
@@ -148,6 +169,11 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 }
 
 
+#define ENABLE_BOX_INTERSECTION     1
+#define ENABLE_SPHERE_INTERSECTION  0
+#define ENABLE_MESH_INTERSECTION    1
+
+
 __global__ void computeIntersections(
     int depth,
     int num_paths,
@@ -180,17 +206,29 @@ __global__ void computeIntersections(
             if (geom.type == CUBE)
             {
                 // 94 vgprs
-                t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                #if ENABLE_BOX_INTERSECTION
+                    t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                #else 
+                    t = -1.0f;
+                #endif
             }
             else if (geom.type == SPHERE)
             {
                 // 78 vgprs
-                t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                #if ENABLE_SPHERE_INTERSECTION
+                    t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                #else 
+                    t = -1.0f;
+                #endif
             }
             else if (geom.type == MESH)
             {
                 // 80 VGPRs
-                t = meshIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                #if ENABLE_MESH_INTERSECTION
+                    t = meshIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                #else
+                    t = -1.0f;
+                #endif
             }
 
             if (t > 0.0f && t_min > t)
@@ -305,6 +343,126 @@ struct sort_materials {
 };
 
 
+struct sort_rays {
+    const Geom* dev_mesh;
+
+    sort_rays(const Geom* dev_geom)
+        : dev_mesh(dev_geom)
+    {}
+
+    __device__ bool operator()(const PathSegment &path) const {
+        Ray r = path.ray;
+
+        r.origin = glm::vec3(dev_mesh->inverseTransform * glm::vec4(r.origin, 1.0f));
+        r.direction = glm::vec3(dev_mesh->inverseTransform * glm::vec4(r.direction, 0.0f));
+
+        r.inv_direction.x = __frcp_rn(r.direction.x);
+        r.inv_direction.y = __frcp_rn(r.direction.y);
+        r.inv_direction.z = __frcp_rn(r.direction.z);
+
+        r.sign.x = (r.inv_direction.x < 0.0f) ? 1 : 0;
+        r.sign.y = (r.inv_direction.y < 0.0f) ? 1 : 0;
+        r.sign.z = (r.inv_direction.z < 0.0f) ? 1 : 0;
+
+        float t;
+        return dev_mesh->mesh.bvh.dev_bvh[0].box.RayBoxInterection(r, t);
+    }
+};
+
+
+#define MORTON_INTERP_DIST 10.0f
+#define SCENE_EXTENT 20.0f
+
+__device__ inline uint32_t expandBits(uint32_t v) {
+    v = (v * 0x00010001u) & 0xFF0000FFu;
+    v = (v * 0x00000101u) & 0x0F00F00Fu;
+    v = (v * 0x00000011u) & 0xC30C30C3u;
+    v = (v * 0x00000005u) & 0x49249249u;
+    return v;
+}
+
+__device__ inline uint32_t morton3D(float x, float y, float z) {
+    x = fminf(fmaxf(x * 1024.0f, 0.0f), 1023.0f);
+    y = fminf(fmaxf(y * 1024.0f, 0.0f), 1023.0f);
+    z = fminf(fmaxf(z * 1024.0f, 0.0f), 1023.0f);
+
+    uint32_t xx = expandBits((uint32_t)x);
+    uint32_t yy = expandBits((uint32_t)y);
+    uint32_t zz = expandBits((uint32_t)z);
+
+    return (xx << 2) | (yy << 1) | zz;
+}
+
+__device__ void normalizePoint(const glm::vec3& point, glm::vec3& out) {
+    out.x = (point.x + SCENE_EXTENT) / (2.0f * SCENE_EXTENT);
+    out.y = (point.y + SCENE_EXTENT) / (2.0f * SCENE_EXTENT);
+    out.z = (point.z + SCENE_EXTENT) / (2.0f * SCENE_EXTENT);
+}
+
+__device__ void normalizeDirection(const glm::vec3& dir, glm::vec3& out) {
+    out = (dir + glm::vec3(1.0f)) * 0.5f;
+}
+
+__device__ uint32_t rayMortonCode(const Ray& ray) {
+    glm::vec3 p0_n, p1_n;
+    
+    normalizePoint(ray.origin, p0_n);
+    
+    glm::vec3 farPoint = ray.origin + (ray.direction * 0.25f * MORTON_INTERP_DIST); 
+    normalizePoint(farPoint, p1_n);
+
+    glm::vec3 midpoint = 0.5f * (p0_n + p1_n);
+
+    return morton3D(midpoint.x, midpoint.y, midpoint.z);
+}
+
+__global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegments, const Geom* mesh, uint32_t* morton_codes, bool* hit_geoms) {
+    int path_index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (path_index < n)
+    {
+        Ray r = pathSegments[path_index].ray;
+
+        r.origin = glm::vec3(mesh->inverseTransform * glm::vec4(r.origin, 1.0f));
+        r.direction = glm::vec3(mesh->inverseTransform * glm::vec4(r.direction, 0.0f));
+
+        r.inv_direction.x = __frcp_rn(r.direction.x);
+        r.inv_direction.y = __frcp_rn(r.direction.y);
+        r.inv_direction.z = __frcp_rn(r.direction.z);
+
+        r.sign.x = (r.inv_direction.x < 0.0f) ? 1 : 0;
+        r.sign.y = (r.inv_direction.y < 0.0f) ? 1 : 0;
+        r.sign.z = (r.inv_direction.z < 0.0f) ? 1 : 0;
+
+        float t;
+        morton_codes[path_index] = rayMortonCode(r);
+        hit_geoms[path_index] = mesh->mesh.bvh.dev_bvh[0].box.RayBoxInterection(r, t);
+    }
+} 
+
+
+
+
+struct sort_rays_morton {
+    const uint32_t* d_morton_codes;
+    const bool* d_hit_geoms;
+
+    sort_rays_morton(const uint32_t* d_m_c, const bool* d_h_g) :
+        d_morton_codes(d_m_c),
+        d_hit_geoms(d_h_g)
+    {}
+
+    __device__ bool operator()(int pA, int pB) const {
+        bool b = !d_hit_geoms[pB];
+        if (b || !d_hit_geoms[pA]) {
+            return b;
+        }
+
+        return d_morton_codes[pA] < d_morton_codes[pB];
+    }
+};
+
+
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
     const int traceDepth = hst_scene->state.traceDepth;
@@ -320,35 +478,94 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // 1D block for path tracing
     const int blockSize1d = BLOCK_SIZE_1D;
 
-    generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths);
+    generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths_A);
     checkCUDAError("generate camera ray");
 
     int depth = 0;
     int num_paths = pixelcount;
 
-    // --- PathSegment Tracing Stage ---
-    // Shoot ray into scene, bounce between objects, push shading chunks
+    CudaTimer cudaTimer;
+
+    PathSegment* dev_paths;
+    PathSegment* dev_paths_sorted;
+
+    int last_num_paths = num_paths;
 
     bool iterationComplete = false;
     while (!iterationComplete)
-    {
+    { 
+        dev_paths = (depth % 2) == 0 ? dev_paths_A : dev_paths_B;
+        dev_paths_sorted = (depth % 2) == 1 ? dev_paths_A : dev_paths_B;
+
+        cudaTimer.record(fmt::format("Start, Iter {}", depth+1));
+
         if (iter == MAX_ITERATIONS) {
             exit(0);
         }
 
-        // if (iter == 1) {
-            // printf("NumPaths: %d\n", num_paths);
-        // }
-
         // clean shading chunks
         cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+        thrust::sequence(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths);
+
+        cudaTimer.record(fmt::format("Memset, Iter {}", depth+1));
+
+        dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
+
+        #if 0
+            const Geom* d_mesh;
+            for (int i = 0; i < hst_scene->geoms.size(); i++) {
+                Geom &geom = hst_scene->geoms[i];
+                if (geom.type == GeomType::MESH) {
+                    d_mesh = dev_geoms + i;
+                    break;
+                }
+            }
+
+            if (d_mesh == nullptr) {
+                printf("ERROR: No Mesh Detected\n");
+                exit(1);
+            }
+
+            thrust::partition(dPtr(dev_paths), dPtr(dev_paths) + num_paths, sort_rays(d_mesh));
+
+            cudaTimer.record(fmt::format("Partition Mesh Hits, Iter {}", depth+1)); 
+        #elif 1
+            const Geom* d_mesh;
+            for (int i = 0; i < hst_scene->geoms.size(); i++) {
+                Geom &geom = hst_scene->geoms[i];
+                if (geom.type == GeomType::MESH) {
+                    d_mesh = dev_geoms + i;
+                    break;
+                }
+            }
+
+            if (d_mesh == nullptr) {
+                printf("ERROR: No Mesh Detected\n");
+                exit(1);
+            }
+
+            intersectionPrecompute<<<numblocksPathSegmentTracing, blockSize1d>>> (
+                num_paths,
+                dev_paths,
+                d_mesh,
+                dev_morton_codes,
+                dev_hit_geom
+            );
+
+            cudaTimer.record(fmt::format("Morton Precompute, Iter {}", depth+1));
+
+            thrust::sort(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths, sort_rays_morton(dev_morton_codes, dev_hit_geom));
+            thrust::gather(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths, dPtr(dev_paths), dPtr(dev_paths_sorted));
+            thrust::copy(dPtr(dev_paths) + num_paths, dPtr(dev_paths) + last_num_paths, dPtr(dev_paths_sorted) + num_paths);
+
+            cudaTimer.record(fmt::format("Sort Mesh Hits Morton, Iter {}", depth+1));
+        #endif
 
         // tracing
-        dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
         computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
             depth,
             num_paths,
-            dev_paths,
+            dev_paths_sorted,
             dev_geoms,
             hst_scene->geoms.size(),
             dev_intersections
@@ -356,34 +573,43 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         checkCUDAError("compute intersections");
         depth++;
 
+        cudaTimer.record(fmt::format("Compute Intersections, Iter {}", depth));
+
         #if MATERIAL_SORTING
             thrust::sort_by_key(
                 thrust::device,
                 dev_intersections,
                 dev_intersections + num_paths,
-                dev_paths,
+                dev_paths_sorted,
                 sort_materials()
             );
+
+            cudaTimer.record(fmt::format("Material Sorting, Iter %i", depth));
         #endif
 
         shadePath<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
-            dev_paths,
+            dev_paths_sorted,
             dev_materials,
             dev_intersections,
             depth
         );
+
+        cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));
 
         if (depth == traceDepth) {
             iterationComplete = true; // TODO: should be based off stream compaction results.
         }
 
         #if STREAM_COMPACTION
-            auto new_end = thrust::partition(dPtr(dev_paths), dPtr(dev_paths) + num_paths, path_terminated());
-            num_paths = new_end - dPtr(dev_paths);
-            checkCUDAError("thrust::remove_if");
-        #endif // STREAM_COMPACTION
+            auto new_end = thrust::partition(dPtr(dev_paths_sorted), dPtr(dev_paths_sorted) + num_paths, path_terminated());
+            last_num_paths = num_paths;
+            num_paths = new_end - dPtr(dev_paths_sorted);
+            checkCUDAError("thrust::partition");
+
+            cudaTimer.record(fmt::format("Stream Compaction, Iter {}", depth));
+        #endif
 
         if (guiData != NULL)
         {
@@ -393,12 +619,18 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         if (num_paths == 0) {
             iterationComplete = true;
         }
+
+        cudaTimer.record(fmt::format("End, Iter {}", depth));
     }
+    
+    cudaTimer.report();
 
-        // Assemble this iteration and apply it to the image
+    printf("Total Iteration Elapsed Time: %f\n\n", cudaTimer.get_elapsed("Start, Iter 1", "End, Iter 8"));
+
+    cudaTimer.clean();
+
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
-
+    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths_sorted);
 
     ///////////////////////////////////////////////////////////////////////////
 
