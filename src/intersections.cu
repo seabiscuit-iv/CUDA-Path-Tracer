@@ -271,7 +271,10 @@ __device__ float meshIntersectionTest(
             a = r.origin - a;
             float u = inv_det * glm::dot(a, cross);
 
-            if ((u < 0 && glm::abs(u) > epsilon) || (u > 1 && glm::abs(u-1) > epsilon)) {
+            float u_min = -epsilon;
+            float u_max = 1.0f + epsilon;
+
+            if (u < u_min || u > u_max) {
                 continue;
             }
 
