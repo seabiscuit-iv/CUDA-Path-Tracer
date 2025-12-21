@@ -677,9 +677,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         #endif
     }
     
-    cudaTimer.report();
+    // cudaTimer.report();
 
-    printf("Total Iteration Elapsed Time: %f\n\n", cudaTimer.get_elapsed("Start, Iter 1", "End, Iter 8"));
+    // printf("Total Iteration Elapsed Time: %f\n\n", cudaTimer.get_elapsed("Start, Iter 1", "End, Iter 8"));
 
     cudaTimer.clean();
 

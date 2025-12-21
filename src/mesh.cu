@@ -2,9 +2,12 @@
 #include <stack>
 #include "stack.h"
 #include "sceneStructs.h"
+#include "myoptix.h"
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <numeric>
+
+#include <fmt/format.h>
 
 #define BIN_COUNT 16
 
@@ -59,6 +62,72 @@ void Mesh::make_mesh_device() {
     }
 
     bvh.make_bvh(h_verts, h_triangles);
+
+    // optix
+    OptixDeviceContext optix = get_optix();
+    OptixTraversableHandle as_handle;
+    CUdeviceptr d_as_output_buffer;
+    {
+        OptixAccelBuildOptions accel_options = {};
+        accel_options.buildFlags = OPTIX_BUILD_FLAG_NONE;
+        accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+        CUdeviceptr d_verts_cuptr = CUdeviceptr(d_verts);
+
+        const uint32_t triangle_input_flags[1] = { OPTIX_GEOMETRY_FLAG_NONE };
+        OptixBuildInput triangle_input = {};
+        triangle_input.type                        = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+        triangle_input.triangleArray.vertexFormat  = OPTIX_VERTEX_FORMAT_FLOAT3;
+        triangle_input.triangleArray.numVertices   = static_cast<uint32_t>( h_verts.size() );
+        triangle_input.triangleArray.vertexBuffers = &d_verts_cuptr;
+        triangle_input.triangleArray.vertexStrideInBytes = sizeof(glm::vec3);
+        triangle_input.triangleArray.flags         = triangle_input_flags;
+        triangle_input.triangleArray.numSbtRecords = 1;
+        triangle_input.triangleArray.indexFormat   = OptixIndicesFormat::OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+        triangle_input.triangleArray.numIndexTriplets = h_triangles.size();
+        triangle_input.triangleArray.indexBuffer = CUdeviceptr(d_triangles);
+        triangle_input.triangleArray.indexStrideInBytes = sizeof(Triangle);
+
+        OptixAccelBufferSizes as_buffer_sizes;
+        OPTIX_CHECK( optixAccelComputeMemoryUsage(
+            optix,
+            &accel_options,
+            &triangle_input,
+            1,
+            &as_buffer_sizes
+            ) );
+        fmt::println("Accel Structure Buffer Size: {} bytes", as_buffer_sizes.outputSizeInBytes);
+
+        CUdeviceptr d_as_temp_buffer;
+        cudaMalloc(
+                    reinterpret_cast<void**>( &d_as_temp_buffer ),
+                    as_buffer_sizes.tempSizeInBytes
+                    );
+        cudaMalloc(
+                    reinterpret_cast<void**>( &d_as_output_buffer ),
+                    as_buffer_sizes.outputSizeInBytes
+                    );
+
+        OPTIX_CHECK( optixAccelBuild(
+                    optix,
+                    0,                  // CUDA stream
+                    &accel_options,
+                    &triangle_input,
+                    1,                  // num build inputs
+                    d_as_temp_buffer,
+                    as_buffer_sizes.tempSizeInBytes,
+                    d_as_output_buffer,
+                    as_buffer_sizes.outputSizeInBytes,
+                    &as_handle,
+                    nullptr,            // emitted property list
+                    0                   // num emitted properties
+                    ) );
+
+        cudaFree( reinterpret_cast<void*>( d_as_temp_buffer ) );
+        cudaDeviceSynchronize();
+
+        fmt::println("Acceleration Structure Construction Complete");
+    }
 
     d_valid = true;
 }

@@ -4,6 +4,7 @@
 #include "scene.h"
 #include "sceneStructs.h"
 #include "utilities.h"
+#include "myoptix.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
@@ -245,6 +246,8 @@ bool init()
 
     glUseProgram(passthroughProgram);
     glActiveTexture(GL_TEXTURE0);
+
+    init_optix();
 
     return true;
 }

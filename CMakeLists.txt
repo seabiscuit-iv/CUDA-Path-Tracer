@@ -67,6 +67,7 @@ set(headers
 
 set(sources
     src/main.cpp
+    src/myoptix.cpp
     src/cuda_timer.cu
     src/stb.cpp
     src/image.cpp
@@ -129,6 +130,17 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(fmt)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} fmt::fmt)
+
+message("Search path: $ENV{OPTIX_SDK}\\SDK\\include")
+find_path(OptiX_INCLUDE
+  NAMES optix.h
+  PATHS "$ENV{OPTIX_SDK}\\include"
+  NO_DEFAULT_PATH
+  )
+find_path(OptiX_INCLUDE
+  NAMES optix.h
+  )
+include_directories("${OptiX_INCLUDE}")
 
 
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

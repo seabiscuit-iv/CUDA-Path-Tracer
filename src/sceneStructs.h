@@ -26,8 +26,8 @@ enum MaterialType {
 
 
 struct Triangle {
-    int v_indices[3];
-    int n_indices[3];
+    uint32_t v_indices[3];
+    uint32_t n_indices[3];
 
     Triangle(int v[3], int n[3])
     {
