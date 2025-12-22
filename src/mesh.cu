@@ -161,6 +161,57 @@ void Mesh::make_mesh_device() {
         fmt::println("Optix Module Compilation Complete");
     }
 
+    OptixProgramGroup raygen_prog_group = nullptr;
+    OptixProgramGroup miss_prog_group = nullptr;
+    OptixProgramGroup hitgroup_prog_group = nullptr;
+    {
+        OptixProgramGroupOptions program_group_options = {};
+
+        OptixProgramGroupDesc raygen_prog_group_desc    = {}; //
+        raygen_prog_group_desc.kind                     = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+        raygen_prog_group_desc.raygen.module            = module;
+        raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg";
+        OPTIX_CHECK_LOG( optixProgramGroupCreate(
+                    optix,
+                    &raygen_prog_group_desc,
+                    1,   // num program groups
+                    &program_group_options,
+                    LOG, &LOG_SIZE,
+                    &raygen_prog_group
+                    ) );
+        fmt::println("          Created Raygen Program");
+
+        OptixProgramGroupDesc miss_prog_group_desc  = {};
+        miss_prog_group_desc.kind                   = OPTIX_PROGRAM_GROUP_KIND_MISS;
+        miss_prog_group_desc.miss.module            = module;
+        miss_prog_group_desc.miss.entryFunctionName = "__miss__ms";
+        OPTIX_CHECK_LOG( optixProgramGroupCreate(
+                    optix,
+                    &miss_prog_group_desc,
+                    1,   // num program groups
+                    &program_group_options,
+                    LOG, &LOG_SIZE,
+                    &miss_prog_group
+                    ) );
+        fmt::println("          Created Miss Program");
+
+        OptixProgramGroupDesc hitgroup_prog_group_desc = {};
+        hitgroup_prog_group_desc.kind                         = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+        hitgroup_prog_group_desc.hitgroup.moduleCH            = module;
+        hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+        OPTIX_CHECK_LOG( optixProgramGroupCreate(
+                    optix,
+                    &hitgroup_prog_group_desc,
+                    1,   // num program groups
+                    &program_group_options,
+                    LOG, &LOG_SIZE,
+                    &hitgroup_prog_group
+                    ) );
+        fmt::println("          Created Hit Program");
+
+        fmt::println("Optix Program Group Creation Complete");
+    }
+
     d_valid = true;
 }
 
