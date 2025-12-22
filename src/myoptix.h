@@ -4,8 +4,11 @@
 #include <optix_stubs.h>
 #include <string>
 #include <vector>
+#include <glm/glm.hpp>
 #include <fmt/format.h>
 #include <exception>
+
+#include "sceneStructs.h"
 
 void init_optix();
 OptixDeviceContext get_optix();
@@ -79,4 +82,16 @@ void getInputFromCuString( std::string&                    input,
 //   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl/cuda/std", \
 //   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl" 
 
-// #define SAMPLES_RELATIVE_INCLUDE_DIRS 
+
+void build_optix_accel_structure(
+    const std::vector<glm::vec3>& h_verts, 
+    const glm::vec3* d_verts, 
+    const std::vector<Triangle>& h_triangles, 
+    const Triangle* d_triangles,
+    OptixTraversableHandle& out_handle,
+    CUdeviceptr& out_buffer
+); 
+
+void compile_pathtracing_optix_module(OptixModule& out_module, OptixPipelineCompileOptions& out_pipeline_options);
+
+void create_optix_program_groups(const OptixModule& module, OptixProgramGroup& out_raygen_prog_group, OptixProgramGroup& out_miss_prog_group, OptixProgramGroup& out_hit_prog_group);
