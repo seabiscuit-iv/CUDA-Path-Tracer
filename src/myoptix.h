@@ -2,10 +2,13 @@
 
 #include <optix.h>
 #include <optix_stubs.h>
+#include <string>
+#include <vector>
+#include <fmt/format.h>
+#include <exception>
 
 void init_optix();
 OptixDeviceContext get_optix();
-
 
 #define OPTIX_CHECK(call)                                                      \
 do {                                                                           \
@@ -15,3 +18,65 @@ do {                                                                           \
         exit(1);                                                              \
     }                                                                          \
 } while(0)
+
+#define STRINGIFY( x ) STRINGIFY2( x )
+#define STRINGIFY2( x ) #x
+#define LINE_STR STRINGIFY( __LINE__ )
+
+#define NVRTC_CHECK_ERROR( func )                                                                                           \
+    do                                                                                                                      \
+    {                                                                                                                       \
+        nvrtcResult code = func;                                                                                            \
+        if( code != NVRTC_SUCCESS )                                                                                         \
+            throw std::runtime_error( fmt::format("ERROR: {} ({}): {}", __FILE__, LINE_STR, std::string( nvrtcGetErrorString( code ) )) ); \
+    } while( 0 )
+
+static inline void optixCheckLog( OptixResult  res,
+                           const char*  log,
+                           size_t       sizeof_log,
+                           size_t       sizeof_log_returned,
+                           const char*  call,
+                           const char*  file,
+                           unsigned int line )
+{
+    if( res != OPTIX_SUCCESS )
+    {
+        throw std::runtime_error( fmt::format("Optix call '{}' failed: {}: {} \nLog:\n{} {}\n", call, file, line, log, ( sizeof_log_returned > sizeof_log ? "<TRUNCATED>" : "" )) );
+    }
+}
+
+#define OPTIX_CHECK_LOG( call )                                                \
+    do                                                                         \
+    {                                                                          \
+        char   LOG[2048];                                                      \
+        size_t LOG_SIZE = sizeof( LOG );                                       \
+        optixCheckLog( call, LOG, sizeof( LOG ), LOG_SIZE, #call,     \
+                                __FILE__, __LINE__ );                          \
+    } while( false )
+
+#define CUDA_NVRTC_OPTIONS  \
+  "-std=c++17", \
+  "-arch", \
+  "compute_75", \
+  "-lineinfo", \
+  "-use_fast_math", \
+  "-default-device", \
+  "-rdc", \
+  "true", \
+  "-D__x86_64"
+
+void getCuStringFromFile( std::string& cu, const char* filename );
+void getInputFromCuString( std::string&                    input,                                  
+                                  const char*                     cu_source,
+                                  const char*                     name,
+                                  const char**                    log_string = nullptr,
+                                  const std::vector<const char*>& compiler_options = {CUDA_NVRTC_OPTIONS});
+
+#define ABSOLUTE_INCLUDE_DIRS \
+  "C:/ProgramData/NVIDIA Corporation/OptiX SDK 9.1.0/include", \
+  "C:/Users/saahi/Documents/Homework/cis-5650/CUDA-Path-Tracer/external/include", \
+  "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include"
+//   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl/cuda/std", \
+//   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl" 
+
+// #define SAMPLES_RELATIVE_INCLUDE_DIRS 

@@ -150,5 +150,7 @@ target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE "$<$<AND:$<CONFIG:Debug,Rel
 add_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /W4 /WX /permissive- /sdl)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CUDA>>:-lineinfo;-src-in-ptx>")
 
+target_link_libraries(${CMAKE_PROJECT_NAME} nvrtc.lib)
+
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${CMAKE_PROJECT_NAME})
 

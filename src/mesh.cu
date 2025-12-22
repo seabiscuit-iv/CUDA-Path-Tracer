@@ -61,6 +61,7 @@ void Mesh::make_mesh_device() {
         cudaMemcpy(d_normals, h_normals.data(), num_normals * sizeof(glm::vec3), cudaMemcpyHostToDevice);
     }
 
+    // reenable this, only disabled for performance
     bvh.make_bvh(h_verts, h_triangles);
 
     // optix
@@ -127,6 +128,37 @@ void Mesh::make_mesh_device() {
         cudaDeviceSynchronize();
 
         fmt::println("Acceleration Structure Construction Complete");
+    }
+
+    OptixModule module = nullptr;
+    OptixPipelineCompileOptions pipeline_compile_options = {};
+    {  
+        OptixModuleCompileOptions module_compile_options = {};
+        pipeline_compile_options.usesMotionBlur        = false;
+        pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+        pipeline_compile_options.numPayloadValues      = 3; // fix later
+        pipeline_compile_options.numAttributeValues    = 3; // fix later
+        pipeline_compile_options.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE;
+        pipeline_compile_options.pipelineLaunchParamsVariableName = "params"; // fix later
+        pipeline_compile_options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+
+        std::string shaderfile = "optix_triangle.cu";
+        std::string cu, input;
+
+        getCuStringFromFile(cu, shaderfile.c_str());
+        getInputFromCuString(input, cu.c_str(), "optix_triangle");
+
+        OPTIX_CHECK_LOG( optixModuleCreate(
+            optix,
+            &module_compile_options,
+            &pipeline_compile_options,
+            input.c_str(),
+            input.size(),
+            LOG, &LOG_SIZE,
+            &module
+            ) );
+
+        fmt::println("Optix Module Compilation Complete");
     }
 
     d_valid = true;

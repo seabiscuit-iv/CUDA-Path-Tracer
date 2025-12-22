@@ -66,6 +66,21 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 
+void terminateHandler() {
+    if (auto ex = std::current_exception()) {
+        try {
+            std::rethrow_exception(ex);
+        } catch (const std::exception& e) {
+            std::cerr << "Uncaught exception: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Uncaught non-standard exception" << std::endl;
+        }
+    } else {
+        std::cerr << "Terminate called without active exception" << std::endl;
+    }
+    std::abort();
+}
+
 std::string currentTimeString()
 {
     time_t now;
@@ -343,6 +358,8 @@ void mainLoop()
 
 int main(int argc, char** argv)
 {
+    std::set_terminate(terminateHandler);
+
     startTimeString = currentTimeString();
 
     if (argc < 2)
