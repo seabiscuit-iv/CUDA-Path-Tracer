@@ -35,8 +35,10 @@ static __forceinline__ __device__ void computeRay( uint3 idx, uint3 dim, float3&
 
     // origin    = params.cam_eye;
     // direction = normalize( d.x * U + d.y * V + W );
-    origin = make_float3(0.0f, 0.0f, 0.0f);
-    direction = make_float3(0.0f, 1.0f, 0.0f);
+    OptixPathSegment& path_segment = params.path_segments[idx.x];
+
+    origin = path_segment.ray.origin;
+    direction = path_segment.ray.direction;
 }
 
 

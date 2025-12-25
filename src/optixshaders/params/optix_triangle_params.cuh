@@ -12,9 +12,28 @@ enum RayType
 //     OptixTraversableHandle as_handle;
 // };
 
+struct OptixRay
+{ 
+    float3 origin;
+    float3 direction;
+    float3 inv_direction;
+    int3 sign;
+};
+
+struct OptixPathSegment
+{
+    OptixRay ray;
+    float3 color;
+    float3 throughput;
+    float3 sample_dir;
+    int pixelIndex;
+    bool kill;
+};
+
 struct Params
 {
     OptixTraversableHandle handle;
+    OptixPathSegment* path_segments;
 };
 
 struct RayGenData

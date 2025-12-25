@@ -633,6 +633,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             // time for some optix magic
             Params optix_params = {};
             optix_params.handle = hst_scene->ias_handle;
+            optix_params.path_segments = reinterpret_cast<OptixPathSegment*>(dev_paths);
             cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
             OPTIX_CHECK(
                 optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);
