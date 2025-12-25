@@ -112,6 +112,12 @@ void create_optix_sbt(
     const OptixProgramGroup& hitgroup_program_group
 );
 
+void create_ias(
+    const std::vector<OptixInstance>& instances,
+    CUdeviceptr &d_optix_instances,
+    OptixTraversableHandle& ias_handle
+);
+
 template <typename T>
 struct SbtRecord
 {

@@ -427,6 +427,38 @@ int main(int argc, char** argv)
     OptixShaderBindingTable sbt = {};
     create_optix_sbt(sbt, raygen_prog_group, miss_prog_group, hit_prog_group);
 
+    std::vector<OptixInstance> optix_instances;
+    int id = 0;
+    for(Geom &g : scene->geoms) {
+        if (g.type == GeomType::MESH && g.mesh.d_valid) {
+            // Create a single IAS from all GAS
+            OptixInstance inst = {};
+
+            float transform[12] = {
+                g.transform[0][0], g.transform[1][0], g.transform[2][0], g.transform[3][0],
+                g.transform[0][1], g.transform[1][1], g.transform[2][1], g.transform[3][1],
+                g.transform[0][2], g.transform[1][2], g.transform[2][2], g.transform[3][2],
+            };  
+
+            memcpy(inst.transform, transform, sizeof(float) * 12);
+
+            inst.instanceId = id;
+            inst.sbtOffset = id * RAY_TYPE_COUNT;
+            inst.visibilityMask = 255;
+            inst.flags = OPTIX_INSTANCE_FLAG_NONE;
+            inst.traversableHandle = g.mesh.as_handle;
+
+            optix_instances.push_back(inst);
+
+            id++;
+        }
+    }
+
+    CUdeviceptr d_optix_instances;
+    OptixTraversableHandle ias_handle;
+
+    create_ias(optix_instances, d_optix_instances, ias_handle);
+
     // GLFW main loop
     mainLoop();
 
