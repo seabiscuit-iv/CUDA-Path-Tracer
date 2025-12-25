@@ -23,6 +23,7 @@
 #include <fmt/core.h>
 
 #include "common.cu"
+#include "myoptix.h"
 
 #include "shaders/lambert.cu"
 #include "shaders/specular.cu"
@@ -84,6 +85,9 @@ static PathSegment* dev_paths_A = NULL;
 static PathSegment* dev_paths_B = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 
+// Optix
+static CUdeviceptr d_optix_paramters;
+
 static uint32_t* dev_morton_codes;
 static bool* dev_hit_geom;
 static int* dev_path_scatter_buf;
@@ -121,6 +125,8 @@ void pathtraceInit(Scene* scene)
 
     cudaMalloc(&dev_path_scatter_buf, pixelcount * sizeof(int));
 
+    cudaMalloc( reinterpret_cast<void**>( &d_optix_paramters ), sizeof( Params ) );
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -136,6 +142,8 @@ void pathtraceFree()
     cudaFree(dev_morton_codes);
     cudaFree(dev_hit_geom);
     cudaFree(dev_path_scatter_buf);
+    
+    cudaFree(reinterpret_cast<void*>(d_optix_paramters));
 
     checkCUDAError("pathtraceFree");
 }
@@ -621,6 +629,17 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             );
             checkCUDAError("compute intersections");
             depth++;
+
+            // time for some optix magic
+            Params optix_params = {};
+            optix_params.handle = hst_scene->ias_handle;
+            cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
+            OPTIX_CHECK(
+                optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);
+            );
+            cudaDeviceSynchronize();
+            fmt::println("OptixTrace Iteration {}", iter);
+            // end of optix magic
 
             cudaTimer.record(fmt::format("Compute Intersections, Iter {}", depth));
 

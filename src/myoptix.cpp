@@ -261,12 +261,11 @@ void compile_pathtracing_optix_module(OptixModule& module, OptixPipelineCompileO
 
     OptixModuleCompileOptions module_compile_options = {};
     pipeline_compile_options.usesMotionBlur        = false;
-    pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+    pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
     pipeline_compile_options.numPayloadValues      = 3; // fix later
     pipeline_compile_options.numAttributeValues    = 3; // fix later
     pipeline_compile_options.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE;
     pipeline_compile_options.pipelineLaunchParamsVariableName = "params"; // fix later
-    pipeline_compile_options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
 
     std::string shaderfile = "optix_triangle.cu";
     std::string cu, input;
@@ -381,7 +380,7 @@ void initialize_optix_pipeline(
                                                 &direct_callable_stack_size_from_state, &continuation_stack_size ) );
     OPTIX_CHECK( optixPipelineSetStackSize( pipeline, direct_callable_stack_size_from_traversal,
                                             direct_callable_stack_size_from_state, continuation_stack_size,
-                                            1  // maxTraversableDepth
+                                            2  // maxTraversableDepth
                                             ) );
 
     fmt::println("Pipeline Created Successfully");

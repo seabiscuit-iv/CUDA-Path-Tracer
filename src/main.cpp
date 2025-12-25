@@ -459,6 +459,10 @@ int main(int argc, char** argv)
 
     create_ias(optix_instances, d_optix_instances, ias_handle);
 
+    scene->optix_pipeline = optix_pipeline;
+    scene->ias_handle = ias_handle;
+    scene->optix_sbt = sbt;
+
     // GLFW main loop
     mainLoop();
 

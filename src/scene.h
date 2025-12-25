@@ -2,6 +2,7 @@
 
 #include "sceneStructs.h"
 #include <vector>
+#include "optix.h"
 
 class Scene
 {
@@ -15,4 +16,7 @@ public:
     RenderState state;
 
     
+    OptixPipeline optix_pipeline;
+    OptixTraversableHandle ias_handle;
+    OptixShaderBindingTable optix_sbt;
 };
