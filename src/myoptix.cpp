@@ -11,6 +11,8 @@
 // only include this once
 #include <optix_function_table_definition.h>
 
+#include <optix_stack_size.h>
+
 #include <nvrtc.h>
 #include <filesystem>
 
@@ -116,16 +118,16 @@ void getInputFromCuString( std::string&                    input,
     // Collect include dirs
     std::vector<std::string> include_dirs;
     const char*              abs_dirs[] = {ABSOLUTE_INCLUDE_DIRS};
-    // const char*              rel_dirs[] = {SAMPLES_RELATIVE_INCLUDE_DIRS};
+    const char*              rel_dirs[] = {"src/optixshaders/params"}; // this should be replaced eventually
 
     for( const char* dir : abs_dirs )
     {
         include_dirs.push_back( std::string( "-I" ) + dir );
     }
-    // for( const char* dir : rel_dirs )
-    // {
-    //     include_dirs.push_back( "-I" + base_dir + '/' + dir );
-    // }
+    for( const char* dir : rel_dirs )
+    {
+        include_dirs.push_back( "-I" + base_dir + '/' + dir );
+    }
     for( const std::string& dir : include_dirs)
     {
         options.push_back( dir.c_str() );
@@ -338,4 +340,103 @@ void create_optix_program_groups(
     fmt::println("          Created Hit Program");
 
     fmt::println("Optix Program Group Creation Complete");
+}
+
+
+void initialize_optix_pipeline(
+    const OptixProgramGroup& raygen_prog_group, 
+    const OptixProgramGroup& miss_prog_group, 
+    const OptixProgramGroup& hitgroup_prog_group, 
+    const OptixPipelineCompileOptions& pipeline_compile_options,
+    OptixPipeline& pipeline
+) {
+    const uint32_t    max_trace_depth  = 1;
+    OptixProgramGroup program_groups[] = { raygen_prog_group, miss_prog_group, hitgroup_prog_group };
+
+    OptixPipelineLinkOptions pipeline_link_options = {};
+    pipeline_link_options.maxTraceDepth            = max_trace_depth;
+    OPTIX_CHECK_LOG( optixPipelineCreate(
+                optix,
+                &pipeline_compile_options,
+                &pipeline_link_options,
+                program_groups,
+                sizeof( program_groups ) / sizeof( program_groups[0] ),
+                LOG, &LOG_SIZE,
+                &pipeline
+                ) );
+
+    OptixStackSizes stack_sizes = {};
+    for( auto& prog_group : program_groups )
+    {
+        OPTIX_CHECK( optixUtilAccumulateStackSizes( prog_group, &stack_sizes, pipeline ) );
+    }
+
+    uint32_t direct_callable_stack_size_from_traversal;
+    uint32_t direct_callable_stack_size_from_state;
+    uint32_t continuation_stack_size;
+    OPTIX_CHECK( optixUtilComputeStackSizes( &stack_sizes, max_trace_depth,
+                                                0,  // maxCCDepth
+                                                0,  // maxDCDEpth
+                                                &direct_callable_stack_size_from_traversal,
+                                                &direct_callable_stack_size_from_state, &continuation_stack_size ) );
+    OPTIX_CHECK( optixPipelineSetStackSize( pipeline, direct_callable_stack_size_from_traversal,
+                                            direct_callable_stack_size_from_state, continuation_stack_size,
+                                            1  // maxTraversableDepth
+                                            ) );
+
+    fmt::println("Pipeline Created Successfully");
+}
+
+void create_optix_sbt(
+    OptixShaderBindingTable& sbt, 
+    const OptixProgramGroup& raygen_prog_group, 
+    const OptixProgramGroup& miss_prog_group, 
+    const OptixProgramGroup& hitgroup_prog_group
+) {
+    CUdeviceptr  raygen_record;
+    const size_t raygen_record_size = sizeof( RayGenSbtRecord );
+    cudaMalloc( reinterpret_cast<void**>( &raygen_record ), raygen_record_size );
+    RayGenSbtRecord rg_sbt;
+    OPTIX_CHECK( optixSbtRecordPackHeader( raygen_prog_group, &rg_sbt ) );
+    cudaMemcpy(
+        reinterpret_cast<void*>( raygen_record ),
+        &rg_sbt,
+        raygen_record_size,
+        cudaMemcpyHostToDevice
+    );
+
+    CUdeviceptr miss_record;
+    size_t      miss_record_size = sizeof( MissSbtRecord );
+    cudaMalloc( reinterpret_cast<void**>( &miss_record ), miss_record_size );
+    MissSbtRecord ms_sbt;
+    ms_sbt.data = { 0.3f, 0.1f, 0.2f };
+    OPTIX_CHECK( optixSbtRecordPackHeader( miss_prog_group, &ms_sbt ) );
+    cudaMemcpy(
+        reinterpret_cast<void*>( miss_record ),
+        &ms_sbt,
+        miss_record_size,
+        cudaMemcpyHostToDevice
+    );
+
+    CUdeviceptr hitgroup_record;
+    size_t      hitgroup_record_size = sizeof( HitGroupSbtRecord );
+    cudaMalloc( reinterpret_cast<void**>( &hitgroup_record ), hitgroup_record_size );
+    HitGroupSbtRecord hg_sbt;
+    OPTIX_CHECK( optixSbtRecordPackHeader( hitgroup_prog_group, &hg_sbt ) );
+    cudaMemcpy(
+        reinterpret_cast<void*>( hitgroup_record ),
+        &hg_sbt,
+        hitgroup_record_size,
+        cudaMemcpyHostToDevice
+    );
+
+    sbt.raygenRecord                = raygen_record;
+    sbt.missRecordBase              = miss_record;
+    sbt.missRecordStrideInBytes     = sizeof( MissSbtRecord );
+    sbt.missRecordCount             = 1;
+    sbt.hitgroupRecordBase          = hitgroup_record;
+    sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
+    sbt.hitgroupRecordCount         = 1;
+
+    fmt::println("Optix SBT Creation Complete");
 }

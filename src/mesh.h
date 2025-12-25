@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <memory>
+#include <optix.h>
 
 
 class Ray;
@@ -122,6 +123,9 @@ struct Mesh {
     glm::vec3* d_normals = nullptr;
 
     BVH bvh;
+
+    OptixTraversableHandle as_handle;
+    CUdeviceptr d_as_output_buffer;
 
     void make_mesh_host(std::vector<glm::vec3> v, std::vector<int> i, std::vector<glm::vec3> n, std::vector<int> ni);
     void make_mesh_device();

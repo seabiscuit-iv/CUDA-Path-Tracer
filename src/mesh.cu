@@ -65,20 +65,7 @@ void Mesh::make_mesh_device() {
     bvh.make_bvh(h_verts, h_triangles);
 
     // optix
-    OptixDeviceContext optix = get_optix();
-
-    OptixTraversableHandle as_handle;
-    CUdeviceptr d_as_output_buffer;
-    build_optix_accel_structure(h_verts, d_verts, h_triangles, d_triangles, as_handle, d_as_output_buffer);
-
-    OptixModule module = nullptr;
-    OptixPipelineCompileOptions pipeline_compile_options = {};
-    compile_pathtracing_optix_module(module, pipeline_compile_options); 
-
-    OptixProgramGroup raygen_prog_group = nullptr;
-    OptixProgramGroup miss_prog_group = nullptr;
-    OptixProgramGroup hit_prog_group = nullptr;
-    create_optix_program_groups(module, raygen_prog_group, miss_prog_group, hit_prog_group);
+    build_optix_accel_structure(h_verts, d_verts, h_triangles, d_triangles, this->as_handle, this->d_as_output_buffer);
 
     d_valid = true;
 }
@@ -90,6 +77,8 @@ void Mesh::delete_mesh_device() {
     if (has_normal_buffers) {
         cudaFree(d_normals);
     }
+
+    cudaFree((void*)d_as_output_buffer);
 
     bvh.delete_bvh();
 

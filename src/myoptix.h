@@ -9,6 +9,7 @@
 #include <exception>
 
 #include "sceneStructs.h"
+#include "optixshaders/params/optix_triangle_params.cuh"
 
 void init_optix();
 OptixDeviceContext get_optix();
@@ -95,3 +96,29 @@ void build_optix_accel_structure(
 void compile_pathtracing_optix_module(OptixModule& out_module, OptixPipelineCompileOptions& out_pipeline_options);
 
 void create_optix_program_groups(const OptixModule& module, OptixProgramGroup& out_raygen_prog_group, OptixProgramGroup& out_miss_prog_group, OptixProgramGroup& out_hit_prog_group);
+
+void initialize_optix_pipeline(
+    const OptixProgramGroup& raygen_prog_group, 
+    const OptixProgramGroup& miss_prog_group, 
+    const OptixProgramGroup& hitgroup_prog_group, 
+    const OptixPipelineCompileOptions& pipeline_compile_options,
+    OptixPipeline& pipeline
+);
+
+void create_optix_sbt(
+    OptixShaderBindingTable& sbt, 
+    const OptixProgramGroup& raygen_prog_group, 
+    const OptixProgramGroup& miss_prog_group, 
+    const OptixProgramGroup& hitgroup_program_group
+);
+
+template <typename T>
+struct SbtRecord
+{
+    __align__( OPTIX_SBT_RECORD_ALIGNMENT ) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
+    T data;
+};
+
+typedef SbtRecord<RayGenData>     RayGenSbtRecord;
+typedef SbtRecord<MissData>       MissSbtRecord;
+typedef SbtRecord<HitGroupData>   HitGroupSbtRecord;

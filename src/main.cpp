@@ -412,6 +412,21 @@ int main(int argc, char** argv)
         }
     }
 
+    OptixModule module = nullptr;
+    OptixPipelineCompileOptions pipeline_compile_options = {};
+    compile_pathtracing_optix_module(module, pipeline_compile_options); 
+
+    OptixProgramGroup raygen_prog_group = nullptr;
+    OptixProgramGroup miss_prog_group = nullptr;
+    OptixProgramGroup hit_prog_group = nullptr;
+    create_optix_program_groups(module, raygen_prog_group, miss_prog_group, hit_prog_group);
+
+    OptixPipeline optix_pipeline;
+    initialize_optix_pipeline(raygen_prog_group, miss_prog_group, hit_prog_group, pipeline_compile_options, optix_pipeline);
+
+    OptixShaderBindingTable sbt = {};
+    create_optix_sbt(sbt, raygen_prog_group, miss_prog_group, hit_prog_group);
+
     // GLFW main loop
     mainLoop();
 
