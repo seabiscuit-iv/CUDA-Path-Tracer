@@ -408,6 +408,19 @@ int main(int argc, char** argv)
 
     for(Geom &g : scene->geoms) {
         if (g.type == GeomType::MESH && g.mesh.h_valid) {
+            bool copied = false;
+            for(Geom &s : scene->geoms) {
+                if (s.type == GeomType::MESH && s.mesh.h_valid && s.mesh.d_valid && s.mesh.label == g.mesh.label) {
+                    g.mesh.make_mesh_device_copy(s.mesh);
+                    copied = true;
+                    break;
+                }
+            }
+            
+            if (copied) {
+                continue;
+            }
+
             g.mesh.make_mesh_device();
         }
     }

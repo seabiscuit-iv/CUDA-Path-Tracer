@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <fmt/format.h>
 #include <unordered_map>
 
 using namespace std;
@@ -84,6 +85,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
         materials.emplace_back(newMaterial);
     }
     const auto& objectsData = data["Objects"];
+    
+    int count = 0;
     for (const auto& p : objectsData)
     {
         const auto& type = p["TYPE"];
@@ -92,6 +95,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
         {
             newGeom.type = GeomType::MESH;  
             newGeom.mesh.make_mesh_host(CUBE_VERTICES, CUBE_INDICES, CUBE_NORMALS, CUBE_NORMAL_INDICES);
+            newGeom.mesh.label = "Cube";
         }
         else if (type == "sphere")
         {
@@ -111,6 +115,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
             }
 
             newGeom.mesh.make_mesh_host(hostVerts, hostIndices, std::vector<glm::vec3>(), std::vector<int>());
+            newGeom.mesh.label = fmt::format("__OBJECT{}__", count);
         }
         else if (type == "obj")
         {
@@ -160,6 +165,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
             }
             
             newGeom.mesh.make_mesh_host(hostVerts, hostIndices, hostNormals, hostNormalIndices);
+            newGeom.mesh.label = file_name;
         }
         else    
         {
@@ -179,6 +185,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
         newGeom.invTranspose = glm::inverseTranspose(newGeom.transform);
 
         geoms.push_back(newGeom);
+        count++;
     }
     const auto& cameraData = data["Camera"];
     Camera& camera = state.camera;

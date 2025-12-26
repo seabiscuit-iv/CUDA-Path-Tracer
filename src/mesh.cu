@@ -61,7 +61,6 @@ void Mesh::make_mesh_device() {
         cudaMemcpy(d_normals, h_normals.data(), num_normals * sizeof(glm::vec3), cudaMemcpyHostToDevice);
     }
 
-    // reenable this, only disabled for performance
     bvh.make_bvh(h_verts, h_triangles);
 
     // optix
@@ -69,6 +68,17 @@ void Mesh::make_mesh_device() {
 
     d_valid = true;
 }
+
+void Mesh::make_mesh_device_copy(const Mesh& mesh) {
+    d_verts = mesh.d_verts;
+    d_triangles = mesh.d_triangles;
+    d_normals = mesh.d_normals;
+    bvh = mesh.bvh;
+    as_handle = mesh.as_handle;
+    d_as_output_buffer = mesh.d_as_output_buffer;
+    d_valid = true;
+}
+
 
 void Mesh::delete_mesh_device() {
     cudaFree(d_verts);

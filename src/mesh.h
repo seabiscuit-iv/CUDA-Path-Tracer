@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <memory>
+#include <string>
 #include <optix.h>
 
 
@@ -104,6 +105,8 @@ struct BVH {
 
 
 struct Mesh {
+    std::string label;
+
     bool h_valid = false;
     bool d_valid = false;
     bool has_normal_buffers = false;
@@ -129,5 +132,6 @@ struct Mesh {
 
     void make_mesh_host(const std::vector<glm::vec3>& v, const std::vector<int>& indices, const std::vector<glm::vec3>& normals, const std::vector<int>& normal_indices);
     void make_mesh_device();
+    void make_mesh_device_copy(const Mesh& mesh);
     void delete_mesh_device();
 };

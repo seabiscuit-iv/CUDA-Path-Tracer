@@ -262,7 +262,7 @@ void compile_pathtracing_optix_module(OptixModule& module, OptixPipelineCompileO
     OptixModuleCompileOptions module_compile_options = {};
     pipeline_compile_options.usesMotionBlur        = false;
     pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-    pipeline_compile_options.numPayloadValues      = 3; // fix later
+    pipeline_compile_options.numPayloadValues      = 0; // fix later
     pipeline_compile_options.numAttributeValues    = 3; // fix later
     pipeline_compile_options.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE;
     pipeline_compile_options.pipelineLaunchParamsVariableName = "params"; // fix later
