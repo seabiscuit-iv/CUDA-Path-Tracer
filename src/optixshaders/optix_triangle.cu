@@ -95,6 +95,16 @@ extern "C" __global__ void __closesthit__ch()
 
     float3 normal = normalize(cross(edge1, edge2));
 
+    if (normal_buffer != nullptr) {
+        A = normal_buffer[triangle.n_indices[0]];
+        B = normal_buffer[triangle.n_indices[1]];
+        C = normal_buffer[triangle.n_indices[2]];
+
+        float bA = 1.0f - barycentrics.x - barycentrics.y;
+
+        normal = normalize(bA * A + barycentrics.x * B + barycentrics.y * C);
+    }
+
     normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
 
     shadeable_intersection.materialId = material_id;

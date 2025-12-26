@@ -151,7 +151,7 @@ void pathtraceInit(Scene* scene)
         if (geo.type == GeomType::MESH) {
             vertex_buffer_locs.push_back(geo.mesh.d_verts);
             triangle_buffer_locs.push_back(geo.mesh.d_triangles);
-            normal_buffer_locs.push_back(geo.mesh.d_normals);
+            normal_buffer_locs.push_back(geo.mesh.has_normal_buffers ? geo.mesh.d_normals : nullptr);
         }
     }
 
