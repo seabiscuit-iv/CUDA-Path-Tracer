@@ -65,6 +65,7 @@ void runCuda();
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 void terminateHandler() {
     if (auto ex = std::current_exception()) {
@@ -235,6 +236,7 @@ bool init()
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, mousePositionCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetScrollCallback(window, scrollCallback);
 
     // Set up GL context
     glewExperimental = GL_TRUE;
@@ -580,6 +582,12 @@ void runCuda()
 //------INTERACTIVITY SETUP------
 //-------------------------------
 
+bool shiftPressed(GLFWwindow* window)
+{
+    return glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+           glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+}
+
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     if (action == GLFW_PRESS)
@@ -617,41 +625,79 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos)
 {
-    if (xpos == lastX || ypos == lastY)
-    {
-        return; // otherwise, clicking back into window causes re-start
-    }
+    if (xpos == lastX && ypos == lastY)
+        return;
 
-    if (leftMousePressed)
+    double dx = xpos - lastX;
+    double dy = ypos - lastY;
+
+    if (MouseOverImGuiWindow())
+        goto end;
+
+    // SHIFT + LEFT DRAG → PAN
+    if (leftMousePressed && shiftPressed(window))
     {
-        // compute new camera parameters
-        phi -= (xpos - lastX) / width;
-        theta -= (ypos - lastY) / height;
-        theta = std::fmax(0.001f, std::fmin(theta, PI));
+        Camera& cam = renderState->camera;
+
+        float panSpeed = zoom * 0.0015f;
+
+        glm::vec3 right = cam.right;
+        glm::vec3 up    = cam.up;
+
+        cam.lookAt -= right * float(dx) * panSpeed;
+        cam.lookAt += up    * float(dy) * panSpeed;
+
         camchanged = true;
     }
+    // LEFT DRAG → ORBIT
+    else if (leftMousePressed)
+    {
+        phi   -= dx / width;
+        theta -= dy / height;
+
+        theta = glm::clamp(theta, 0.001f, PI - 0.001f);
+        camchanged = true;
+    }
+    // RIGHT DRAG → ZOOM (optional)
     else if (rightMousePressed)
     {
-        zoom += (ypos - lastY) / height;
-        zoom = std::fmax(0.1f, zoom);
+        zoom *= std::exp(float(dy) * 0.002f);
+        zoom = glm::clamp(zoom, 0.1f, 1000.0f);
         camchanged = true;
     }
+    // MIDDLE DRAG → PAN (legacy support)
     else if (middleMousePressed)
     {
-        renderState = &scene->state;
         Camera& cam = renderState->camera;
-        glm::vec3 forward = cam.view;
-        forward.y = 0.0f;
-        forward = glm::normalize(forward);
-        glm::vec3 right = cam.right;
-        right.y = 0.0f;
-        right = glm::normalize(right);
 
-        cam.lookAt -= (float)(xpos - lastX) * right * 0.01f;
-        cam.lookAt += (float)(ypos - lastY) * forward * 0.01f;
+        float panSpeed = zoom * 0.0015f;
+
+        glm::vec3 right = cam.right;
+        glm::vec3 up    = cam.up;
+
+        cam.lookAt -= right * float(dx) * panSpeed;
+        cam.lookAt += up    * float(dy) * panSpeed;
+
         camchanged = true;
     }
 
+end:
     lastX = xpos;
     lastY = ypos;
+}
+
+
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    if (MouseOverImGuiWindow()) return;
+
+    // Sensitivity (tune this)
+    const float zoomSpeed = 0.1f;
+
+    // Trackpad-safe (continuous)
+    zoom *= std::exp(-yoffset * zoomSpeed);
+
+    // Clamp zoom
+    zoom = glm::clamp(zoom, 0.1f, 1000.0f);
+
+    camchanged = true;
 }
