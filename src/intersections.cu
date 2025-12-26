@@ -212,12 +212,12 @@ __device__ float meshIntersectionTest(
 
     float epsilon = (float)(1.1920929E-7F);
 
-    int num_verts = mesh.mesh.num_verts;
+    // int num_verts = mesh.mesh.num_verts;
     glm::vec3* verts = mesh.mesh.d_verts;
-    int num_tris = mesh.mesh.num_triangles;
+    // int num_tris = mesh.mesh.num_triangles;
     Triangle* triangles = mesh.mesh.d_triangles;
 
-    int num_normals = mesh.mesh.num_normals;
+    // int num_normals = mesh.mesh.num_normals;
     glm::vec3* normals = mesh.mesh.d_normals;
 
     float min_t = -1.0f;
