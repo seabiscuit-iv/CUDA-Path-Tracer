@@ -687,6 +687,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 );
                 // fmt::println("OptixTrace Iteration {}", iter);
                 // end of optix magic
+                cudaTimer.record(fmt::format("Optix Compute Intersections"));
             #endif //OPTIX
 
             depth++;
