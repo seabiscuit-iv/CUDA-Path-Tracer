@@ -67,14 +67,14 @@
         {
             "TYPE":"Microfacet",
             "RGB":[0.25, 0.25, 0.25],
-            "ROUGHNESS":0.35,
+            "ROUGHNESS":0.00,
             "METALLIC":0.85
         },
         "mf_floor":
         {
             "TYPE":"Microfacet",
             "RGB":[0.25, 0.25, 0.25],
-            "ROUGHNESS":0.75,
+            "ROUGHNESS":0.00,
             "METALLIC":0.25
         },
         "specular_white":
@@ -114,7 +114,7 @@
     },
     "Camera":
     {
-        "RES":[800,450],
+        "RES":[1000,1000],
         "FOVY":45.0,
         "ITERATIONS":5000,
         "DEPTH":8,

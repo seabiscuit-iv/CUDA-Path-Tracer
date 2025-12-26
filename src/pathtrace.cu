@@ -31,7 +31,7 @@
 
 
 // CONFIGURATION
-#define STREAM_COMPACTION 1
+#define STREAM_COMPACTION 0
 #define MATERIAL_SORTING 0  // enable this if you have a high number of materials
 
 // Set this to -1 when profiling off
@@ -41,6 +41,8 @@
 #define SHADER_VER 2.8
 
 #define DRAW_BVH 0
+
+#define OPTIX 1
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, glm::vec3* image)
@@ -85,6 +87,12 @@ static PathSegment* dev_paths_A = NULL;
 static PathSegment* dev_paths_B = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 
+static int* dev_material_ids; //for optix
+
+static glm::vec3** dev_vertex_buffer_locs;
+static Triangle** dev_triangle_buffer_locs;
+static glm::vec3** dev_normal_buffer_locs;
+
 // Optix
 static CUdeviceptr d_optix_paramters;
 
@@ -127,6 +135,34 @@ void pathtraceInit(Scene* scene)
 
     cudaMalloc( reinterpret_cast<void**>( &d_optix_paramters ), sizeof( Params ) );
 
+    cudaMalloc( &dev_material_ids, sizeof(int) * scene->geoms.size());
+    std::vector<int> material_ids;
+    for (Geom& geom : scene->geoms) {
+        material_ids.push_back(geom.materialid);
+    }
+    cudaMemcpy(dev_material_ids, material_ids.data(), material_ids.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+
+    std::vector<glm::vec3*> vertex_buffer_locs;
+    std::vector<Triangle*> triangle_buffer_locs;
+    std::vector<glm::vec3*> normal_buffer_locs;
+
+    for (const Geom& geo : scene->geoms) {
+        if (geo.type == GeomType::MESH) {
+            vertex_buffer_locs.push_back(geo.mesh.d_verts);
+            triangle_buffer_locs.push_back(geo.mesh.d_triangles);
+            normal_buffer_locs.push_back(geo.mesh.d_normals);
+        }
+    }
+
+    cudaMalloc( &dev_vertex_buffer_locs, sizeof(glm::vec3*) * vertex_buffer_locs.size() );
+    cudaMalloc( &dev_triangle_buffer_locs, sizeof(Triangle*) * triangle_buffer_locs.size() );
+    cudaMalloc( &dev_normal_buffer_locs, sizeof(glm::vec3*) * normal_buffer_locs.size() );
+
+    cudaMemcpy( dev_vertex_buffer_locs, vertex_buffer_locs.data(), sizeof(glm::vec3*) * vertex_buffer_locs.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy( dev_triangle_buffer_locs, triangle_buffer_locs.data(), sizeof(Triangle*) * triangle_buffer_locs.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy( dev_normal_buffer_locs, normal_buffer_locs.data(), sizeof(glm::vec3*) * normal_buffer_locs.size(), cudaMemcpyHostToDevice);
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -142,6 +178,11 @@ void pathtraceFree()
     cudaFree(dev_morton_codes);
     cudaFree(dev_hit_geom);
     cudaFree(dev_path_scatter_buf);
+    cudaFree(dev_material_ids);
+
+    cudaFree(dev_vertex_buffer_locs);
+    cudaFree(dev_triangle_buffer_locs);
+    cudaFree(dev_normal_buffer_locs);
     
     cudaFree(reinterpret_cast<void*>(d_optix_paramters));
 
@@ -618,29 +659,37 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_intersections
             );
         #else
-            // tracing
-            computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
-                depth,
-                num_paths,
-                dev_paths_sorted,
-                dev_geoms,
-                hst_scene->geoms.size(),
-                dev_intersections
-            );
-            checkCUDAError("compute intersections");
-            depth++;
+            #if !OPTIX
+                // tracing
+                computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
+                    depth,
+                    num_paths,
+                    dev_paths_sorted,
+                    dev_geoms,
+                    hst_scene->geoms.size(),
+                    dev_intersections
+                );
+                checkCUDAError("compute intersections");
+            #else // OPTIX
+                // time for some optix magic
+                Params optix_params = {};
+                optix_params.handle = hst_scene->ias_handle;
+                optix_params.path_segments = reinterpret_cast<OptixPathSegment*>(dev_paths_sorted);
+                optix_params.debug_image = reinterpret_cast<float3*>(dev_image);
+                optix_params.shadeable_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_intersections);
+                optix_params.material_ids = dev_material_ids;
+                optix_params.vertex_buffer_locations = (float3**)dev_vertex_buffer_locs;
+                optix_params.triangle_buffer_locations = (OptixTriangle**)dev_triangle_buffer_locs;
+                optix_params.normal_buffer_locations = (float3**)dev_normal_buffer_locs;
+                cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
+                OPTIX_CHECK(
+                    optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);
+                );
+                // fmt::println("OptixTrace Iteration {}", iter);
+                // end of optix magic
+            #endif //OPTIX
 
-            // time for some optix magic
-            Params optix_params = {};
-            optix_params.handle = hst_scene->ias_handle;
-            optix_params.path_segments = reinterpret_cast<OptixPathSegment*>(dev_paths);
-            cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
-            OPTIX_CHECK(
-                optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);
-            );
-            cudaDeviceSynchronize();
-            fmt::println("OptixTrace Iteration {}", iter);
-            // end of optix magic
+            depth++;
 
             cudaTimer.record(fmt::format("Compute Intersections, Iter {}", depth));
 
@@ -673,12 +722,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         }
 
         #if STREAM_COMPACTION && !DRAW_BVH
-            auto new_end = thrust::partition(dPtr(dev_paths_sorted), dPtr(dev_paths_sorted) + num_paths, path_terminated());
-            last_num_paths = num_paths;
-            num_paths = new_end - dPtr(dev_paths_sorted);
-            checkCUDAError("thrust::partition");
+            if (depth == 1) {
+                auto new_end = thrust::partition(dPtr(dev_paths_sorted), dPtr(dev_paths_sorted) + num_paths, path_terminated());
+                last_num_paths = num_paths;
+                num_paths = new_end - dPtr(dev_paths_sorted);
+                checkCUDAError("thrust::partition");
 
-            cudaTimer.record(fmt::format("Stream Compaction, Iter {}", depth));
+                cudaTimer.record(fmt::format("Stream Compaction, Iter {}", depth));
+            }
         #endif
 
         if (guiData != NULL)

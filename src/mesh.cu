@@ -12,7 +12,7 @@
 #define BIN_COUNT 16
 
 
-void Mesh::make_mesh_host(std::vector<glm::vec3> v, std::vector<int> indices, std::vector<glm::vec3> normals, std::vector<int> normal_indices) {
+void Mesh::make_mesh_host(const std::vector<glm::vec3>& v, const std::vector<int>& indices, const std::vector<glm::vec3>& normals, const std::vector<int>& normal_indices) {
     num_verts = v.size();
     num_triangles = indices.size() / 3;
     num_normals = normals.size();

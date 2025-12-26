@@ -90,7 +90,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
         Geom newGeom;
         if (type == "cube")
         {
-            newGeom.type = CUBE;
+            newGeom.type = GeomType::MESH;  
+            newGeom.mesh.make_mesh_host(CUBE_VERTICES, CUBE_INDICES, CUBE_NORMALS, CUBE_NORMAL_INDICES);
         }
         else if (type == "sphere")
         {

@@ -443,7 +443,8 @@ int main(int argc, char** argv)
             memcpy(inst.transform, transform, sizeof(float) * 12);
 
             inst.instanceId = id;
-            inst.sbtOffset = id * RAY_TYPE_COUNT;
+            // inst.sbtOffset = id * RAY_TYPE_COUNT;
+            inst.sbtOffset = 0;
             inst.visibilityMask = 255;
             inst.flags = OPTIX_INSTANCE_FLAG_NONE;
             inst.traversableHandle = g.mesh.as_handle;

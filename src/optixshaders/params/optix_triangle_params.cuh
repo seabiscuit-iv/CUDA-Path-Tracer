@@ -30,10 +30,30 @@ struct OptixPathSegment
     bool kill;
 };
 
+struct OptixShadeableIntersection
+{
+  float t;
+  float3 surfaceNormal;
+  int materialId;
+};
+
+struct OptixTriangle {
+    unsigned int v_indices[3];
+    unsigned int n_indices[3];
+};
+
+
 struct Params
 {
     OptixTraversableHandle handle;
     OptixPathSegment* path_segments;
+    float3* debug_image;
+    OptixShadeableIntersection* shadeable_intersections;    
+    int* material_ids;
+
+    float3** vertex_buffer_locations;
+    OptixTriangle** triangle_buffer_locations;
+    float3** normal_buffer_locations;
 };
 
 struct RayGenData

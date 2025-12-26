@@ -59,7 +59,7 @@
     },
     "Camera":
     {
-        "RES":[800,450],
+        "RES":[1000,1000],
         "FOVY":45.0,
         "ITERATIONS":3000,
         "DEPTH":8,
