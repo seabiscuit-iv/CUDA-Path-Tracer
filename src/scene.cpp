@@ -6,13 +6,14 @@
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "json.hpp"
 
-#ifndef TINYOBJLOADER_IMPLEMENTATION
-#define TINYOBJLOADER_IMPLEMENTATION
-#endif // TINYOBJLOADER_IMPLEMENTATION
-
 #include "tinyobj/tiny_obj_loader.h"
+
+#include "tinygltf/tiny_gltf.h"
 
 #include <fstream>
 #include <iostream>
@@ -31,6 +32,10 @@ Scene::Scene(string filename)
     if (ext == ".json")
     {
         loadFromJSON(filename);
+        return;
+    }
+    else if (ext == ".glb") {
+        loadFromGLTF(filename);
         return;
     }
     else
@@ -203,19 +208,293 @@ void Scene::loadFromJSON(const std::string& jsonName)
     camera.lookAt = glm::vec3(lookat[0], lookat[1], lookat[2]);
     camera.up = glm::vec3(up[0], up[1], up[2]);
 
+    camera.view  = glm::normalize(camera.lookAt - camera.position);
+    camera.right = glm::normalize(glm::cross(camera.view, camera.up));
+    camera.up    = glm::normalize(glm::cross(camera.right, camera.view));
+
     //calculate fov based on resolution
     float yscaled = tan(fovy * (PI / 180));
     float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;
     float fovx = (atan(xscaled) * 180) / PI;
     camera.fov = glm::vec2(fovx, fovy);
 
-    camera.right = glm::normalize(glm::cross(camera.view, camera.up));
     camera.pixelLength = glm::vec2(2 * xscaled / (float)camera.resolution.x,
         2 * yscaled / (float)camera.resolution.y);
 
-    camera.view = glm::normalize(camera.lookAt - camera.position);
-
     //set up render camera stuff
+    int arraylen = camera.resolution.x * camera.resolution.y;
+    state.image.resize(arraylen);
+    std::fill(state.image.begin(), state.image.end(), glm::vec3());
+}
+
+
+
+
+void Scene::loadFromGLTF(const std::string& gltfName) {
+    fmt::println("Loading {} as .glb file", gltfName);
+
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    std::string err;
+    std::string warn;
+
+    bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, gltfName);
+    // bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, filename); // for binary glTF(.glb)
+
+    if (!warn.empty()) {
+        printf("Warn: %s\n", warn.c_str());
+    }
+
+    if (!err.empty()) {
+        printf("Err: %s\n", err.c_str());
+    }
+
+    if (!ret) {
+        printf("Failed to parse glTF: %s\n", gltfName.c_str());
+        exit(1);
+    }
+
+    Material defaultMat{};
+    defaultMat.color = glm::vec3(1.0f);
+    defaultMat.material_type = MaterialType::Emissive;
+    defaultMat.emittance = 10.0f;
+    materials.push_back(defaultMat);
+
+
+    for (auto& mat : model.materials) {
+        Material newMaterial{};
+        if (mat.pbrMetallicRoughness.baseColorFactor.size() >= 3) {
+            newMaterial.color = glm::vec3(
+                mat.pbrMetallicRoughness.baseColorFactor[0],
+                mat.pbrMetallicRoughness.baseColorFactor[1],
+                mat.pbrMetallicRoughness.baseColorFactor[2]
+            );
+        }
+        newMaterial.metallic = mat.pbrMetallicRoughness.metallicFactor;
+        newMaterial.roughness = mat.pbrMetallicRoughness.roughnessFactor;
+
+
+        float emissive_strength = 1.0f;
+        if (mat.extensions.find("KHR_materials_emissive_strength") != mat.extensions.end()) {
+            const auto& ext = mat.extensions.at("KHR_materials_emissive_strength");
+
+            if (ext.Has("emissiveStrength")) {
+                emissive_strength = static_cast<float>(ext.Get("emissiveStrength").GetNumberAsDouble());
+            }
+        }
+        newMaterial.emittance = emissive_strength * glm::length(glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]));
+
+        if (newMaterial.emittance > 0.01f) {
+            newMaterial.material_type = MaterialType::Emissive;
+            newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
+        }
+        else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
+            newMaterial.material_type = MaterialType::Diffuse;
+        }
+        else {
+            newMaterial.material_type = MaterialType::Microfacet;
+        }
+
+        materials.push_back(newMaterial);
+        fmt::println("New Material with RGB {} of type {}", glm::to_string(newMaterial.color), (int)newMaterial.material_type);
+    }
+
+    int camera_node = -1;
+    glm::mat4 camera_transform;
+
+    std::function<void(int, glm::mat4)> processNode;
+    processNode = [&](int node_idx, glm::mat4 parent_transform)
+    {
+        const auto& node = model.nodes[node_idx];
+        glm::mat4 node_transform = glm::mat4(1.0f);
+
+        if (!node.matrix.empty()) {
+            node_transform = glm::make_mat4(node.matrix.data());
+        }
+        else {
+            if (!node.translation.empty()) {
+                node_transform = glm::translate(
+                    node_transform, 
+                    glm::vec3(
+                        node.translation[0], 
+                        node.translation[1], 
+                        node.translation[2]
+                    )
+                );
+            }
+
+            if (!node.rotation.empty()) {
+                glm::quat q(
+                    node.rotation[3], 
+                    node.rotation[0], 
+                    node.rotation[1], 
+                    node.rotation[2]
+                );
+                node_transform *= glm::mat4_cast(q);
+            }
+
+            if (!node.scale.empty()) {
+                node_transform = glm::scale(
+                    node_transform,
+                    glm::vec3(
+                        node.scale[0],
+                        node.scale[1],
+                        node.scale[2]
+                    )
+                );
+            }
+        }
+
+        glm::mat4 global_transform = parent_transform * node_transform;
+
+        if (node.mesh >= 0) {
+            const auto& mesh = model.meshes[node.mesh];
+            for (const auto& prim : mesh.primitives) {
+                if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
+                    fmt::println("WARNING: Mesh {} attempted to create a non-triangle mode primitive", mesh.name);
+                    continue;
+                }
+
+                Geom new_geom{};
+
+                new_geom.type = GeomType::MESH;
+
+                auto it = prim.attributes.find("POSITION");
+                if (it == prim.attributes.end()) { 
+                    continue;
+                }
+                const auto& pos_accessor = model.accessors[it->second];
+
+                assert(pos_accessor.type == TINYGLTF_TYPE_VEC3);
+                assert(pos_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+                const auto& pos_buffer_view = model.bufferViews[pos_accessor.bufferView];
+                const auto& buffer = model.buffers[pos_buffer_view.buffer];
+
+                std::vector<glm::vec3> vertices(pos_accessor.count);
+
+                size_t stride = pos_buffer_view.byteStride
+                    ? pos_buffer_view.byteStride
+                    : sizeof(float) * 3;
+
+                const uint8_t* base =
+                    buffer.data.data() +
+                    pos_buffer_view.byteOffset +
+                    pos_accessor.byteOffset;
+
+                for (size_t i = 0; i < pos_accessor.count; i++) {
+                    const float* p = reinterpret_cast<const float*>(base + i * stride);
+                    vertices[i] = { p[0], p[1], p[2] };
+                }
+
+                std::vector<int> indices;
+                if (prim.indices >= 0) {
+                    const auto& idx_accessor = model.accessors[prim.indices];
+                    const auto& idx_buffer_view = model.bufferViews[idx_accessor.bufferView];
+                    const auto& idx_buffer = model.buffers[idx_buffer_view.buffer];
+                    const void* idx_data = &idx_buffer.data[idx_buffer_view.byteOffset + idx_accessor.byteOffset];
+
+                    indices.resize(idx_accessor.count);
+                    if (idx_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                        const uint16_t* buf = static_cast<const uint16_t*>(idx_data);
+                        for (size_t i = 0; i < idx_accessor.count; ++i) {
+                            indices[i] = buf[i];
+                        }
+                    } 
+                    else if (idx_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                        const uint32_t* buf = static_cast<const uint32_t*>(idx_data);
+                        for (size_t i = 0; i < idx_accessor.count; ++i) {
+                            indices[i] = buf[i];
+                        }
+                    }
+                    else if (idx_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                        const uint8_t* buf = static_cast<const uint8_t*>(idx_data);
+                        for (size_t i = 0; i < idx_accessor.count; ++i) { 
+                            indices[i] = buf[i];
+                        }
+                    }
+                } 
+                else {
+                    indices.resize(vertices.size());
+                    std::iota(indices.begin(), indices.end(), 0);
+                }
+
+                new_geom.mesh.make_mesh_host(vertices, indices, {}, {});
+                new_geom.mesh.label = mesh.name;
+                new_geom.transform = global_transform;
+                new_geom.inverseTransform = glm::inverse(global_transform);
+                new_geom.invTranspose = glm::inverseTranspose(global_transform);
+
+                new_geom.materialid = (prim.material >= 0) ? prim.material + 1 : 0; // default material id
+                geoms.push_back(new_geom);
+                fmt::println("New Geom: {} with material id {}", mesh.name, new_geom.materialid);
+            }
+        }
+
+        if (node.camera >= 0) {
+            if (camera_node != -1) {
+                fmt::println("Multiple cameras defined in GLTF, exiting");
+                exit(1);
+            }
+
+            camera_node = node_idx;
+            camera_transform = global_transform;
+        }
+
+        for (auto child : node.children) {
+            processNode(child, global_transform);
+        }
+    };
+
+    int sceneIndex = (model.defaultScene >= 0) ? model.defaultScene : 0;
+    for (size_t i = 0; i < model.scenes[sceneIndex].nodes.size(); i++) {
+        processNode(model.scenes[sceneIndex].nodes[i], glm::mat4(1.0f));
+    }
+
+    if (camera_node < 0) {
+        fmt::println("No camera found in glTF");
+        exit(1);
+    }
+
+    tinygltf::Camera& gltf_camera = model.cameras[model.nodes[camera_node].camera];
+    fmt::println("Found camera {} at node {}", gltf_camera.name, camera_node);
+
+    float aspect = static_cast<float>(gltf_camera.perspective.aspectRatio);
+
+    Camera& camera = state.camera;
+    RenderState& state = this->state;
+    camera.resolution.y = 1000; // this should be customized
+    camera.resolution.x = aspect * camera.resolution.y; // this should be customized
+    float fovy = glm::degrees(gltf_camera.perspective.yfov);
+    state.iterations = 5000; // this should be customized
+    state.traceDepth = 8; // this should be customized
+    state.imageName = model.scenes[sceneIndex].name.empty() ? "GLTF_DEFAULT_NAME" : model.scenes[sceneIndex].name;
+
+    glm::vec3 eye = glm::vec3(camera_transform[3]);
+
+    camera.position = eye;
+    fmt::println("Camera pos: {}", glm::to_string(eye));
+    
+    camera.view  = -glm::normalize(glm::vec3(camera_transform[2]));
+    camera.right = glm::normalize(glm::vec3(camera_transform[0])); 
+    camera.up    = glm::normalize(glm::vec3(camera_transform[1]));
+
+    fmt::println("View Dir: {}", glm::to_string(camera.view));
+
+    camera.lookAt = camera.position + camera.view;
+
+    // //calculate fov based on resolution
+    float yscaled = tan(0.5f * fovy * (PI / 180));
+    float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;
+    float fovx = (2.0f * atan(xscaled) * 180) / PI;
+    camera.fov = glm::vec2(fovx, fovy);
+
+    fmt::println("{}", glm::to_string(camera.fov));
+
+    camera.pixelLength = glm::vec2(2 * xscaled / (float)camera.resolution.x,
+        2 * yscaled / (float)camera.resolution.y);
+
+    // //set up render camera stuff
     int arraylen = camera.resolution.x * camera.resolution.y;
     state.image.resize(arraylen);
     std::fill(state.image.begin(), state.image.end(), glm::vec3());

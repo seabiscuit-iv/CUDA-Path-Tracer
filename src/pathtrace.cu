@@ -60,10 +60,10 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, g
         pix = pix * invIter;
         
         // reinhard op
-        // pix = pix / (pix + glm::vec3(1.0f));
+        pix = pix / (pix + glm::vec3(1.0f));
 
         //gamma correction
-        // pix = glm::pow(pix, glm::vec3(0.45f));
+        pix = glm::pow(pix, glm::vec3(0.45f));
 
         glm::ivec3 color;
         color.x = glm::clamp((int)(pix.x * 255.0), 0, 255);
@@ -200,8 +200,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         PathSegment& segment = pathSegments[index];
 
         segment.ray.origin = cam.position;
-        segment.color = glm::vec3(0.0f, 0.0f, 0.0f);
-        segment.throughput = glm::vec3(1.0f, 1.0f, 1.0f);
+        segment.color = glm::vec3(0.0f);
+        segment.throughput = glm::vec3(1.0f);
         segment.kill = false;
 
         
@@ -210,9 +210,13 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         float x1 = u01(rng) - 0.5f;
         float x2 = u01(rng) - 0.5f;
 
-        segment.ray.direction = glm::normalize(cam.view
-            - cam.right * cam.pixelLength.x * ((float(x) + x1) - (float)cam.resolution.x * 0.5f)
-            - cam.up * cam.pixelLength.y * ((float(y) + x2) - (float)cam.resolution.y * 0.5f)
+        float pX = (float(x) + x1 + 0.5f) - (float)cam.resolution.x * 0.5f;
+        float pY = (float(y) + x2 + 0.5f) - (float)cam.resolution.y * 0.5f;
+
+        segment.ray.direction = glm::normalize(
+            cam.view 
+            - (cam.right * cam.pixelLength.x * pX) 
+            - (cam.up    * cam.pixelLength.y * pY)
         );
 
         segment.pixelIndex = index;

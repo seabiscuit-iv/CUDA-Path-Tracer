@@ -62,6 +62,7 @@ set(headers
     src/utilities.h
     src/mesh.h
     src/tinyobj/tiny_obj_loader.h
+    src/tinygltf/tiny_gltf.h
     src/stack.h
 )
 

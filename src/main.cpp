@@ -8,6 +8,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -37,9 +38,9 @@ static double lastY;
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
+static glm::vec3 refUp;
 
 float zoom, theta, phi;
-glm::vec3 cameraPosition;
 glm::vec3 ogLookAt; // for recentering the camera
 
 Scene* scene;
@@ -390,16 +391,16 @@ int main(int argc, char** argv)
     glm::vec3 right = glm::cross(view, up);
     up = glm::cross(right, view);
 
-    cameraPosition = cam.position;
-
-    // compute phi (horizontal) and theta (vertical) relative 3D axis
-    // so, (0 0 1) is forward, (0 1 0) is up
-    glm::vec3 viewXZ = glm::vec3(view.x, 0.0f, view.z);
-    glm::vec3 viewZY = glm::vec3(0.0f, view.y, view.z);
-    phi = glm::acos(glm::dot(glm::normalize(viewXZ), glm::vec3(0, 0, -1)));
-    theta = glm::acos(glm::dot(glm::normalize(viewZY), glm::vec3(0, 1, 0)));
-    ogLookAt = cam.lookAt;
-    zoom = glm::length(cam.position - ogLookAt);
+    // Ensure normalized view direction
+    glm::vec3 v = glm::normalize(cam.view);
+    // Horizontal angle (yaw) around Y axis
+    // 0 when looking down -Z
+    phi = atan2(v.x, -v.z);
+    // Vertical angle (pitch) from +Y
+    // 0 when looking straight up, π when looking straight down
+    theta = acos(glm::clamp(v.y, -1.0f, 1.0f));
+    zoom = glm::length(cam.position - cam.lookAt);
+    refUp = glm::normalize(cam.up);
 
     // Initialize CUDA and GL components
     init();
@@ -505,10 +506,10 @@ void saveImage()
             glm::vec3 pix = renderState->image[index] / samples;
 
             //reinhard op
-            // pix = pix / (pix + glm::vec3(1.0f));
+            pix = pix / (pix + glm::vec3(1.0f));
 
             //gamma correction
-            // pix = glm::pow(pix, glm::vec3(0.45f));
+            pix = glm::pow(pix, glm::vec3(0.45f));
 
             img.setPixel(width - 1 - x, y, pix);
         }
@@ -530,20 +531,32 @@ void runCuda()
     {
         iteration = 0;
         Camera& cam = renderState->camera;
-        cameraPosition.x = zoom * sin(phi) * sin(theta);
-        cameraPosition.y = zoom * cos(theta);
-        cameraPosition.z = zoom * cos(phi) * sin(theta);
 
-        cam.view = -glm::normalize(cameraPosition);
+        glm::vec3 focus_point = cam.lookAt;
+        glm::vec3 sphericals;
+
+        cam.view = cam.lookAt - cam.position;
+
+        sphericals.x = -zoom * sin(phi) * sin(theta);
+        sphericals.y = -zoom * cos(theta);
+        sphericals.z = zoom * cos(phi) * sin(theta);
+
+        // fmt::println("OG: {}", glm::to_string(cam.view));
+        // fmt::println("NEW: {}", glm::to_string(-glm::normalize(sphericals)));
+
+        cam.view = -glm::normalize(sphericals);
         glm::vec3 v = cam.view;
-        glm::vec3 u = glm::vec3(0, 1, 0);//glm::normalize(cam.up);
-        glm::vec3 r = glm::cross(v, u);
-        cam.up = glm::cross(r, v);
+        glm::vec3 u = refUp - v * glm::dot(refUp, v);
+        if (glm::pow(glm::length(u), 2.0f) < 1e-6f) {
+            u = glm::vec3(0, 1, 0);
+        }
+        u = glm::normalize(u);
+        glm::vec3 r = glm::normalize(glm::cross(v, u));
+        u = glm::cross(r, v);
+        cam.up    = u;
         cam.right = r;
 
-        cam.position = cameraPosition;
-        cameraPosition += cam.lookAt;
-        cam.position = cameraPosition;
+        cam.position = cam.lookAt - cam.view * zoom;
         camchanged = false;
     }
 
@@ -646,6 +659,9 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos)
 
         cam.lookAt -= right * float(dx) * panSpeed;
         cam.lookAt += up    * float(dy) * panSpeed;
+
+        cam.position -= right * float(dx) * panSpeed;
+        cam.position += up    * float(dy) * panSpeed;
 
         camchanged = true;
     }
