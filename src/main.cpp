@@ -400,7 +400,7 @@ int main(int argc, char** argv)
     // 0 when looking straight up, π when looking straight down
     theta = acos(glm::clamp(v.y, -1.0f, 1.0f));
     zoom = glm::length(cam.position - cam.lookAt);
-    refUp = glm::normalize(cam.up);
+    refUp = glm::normalize(glm::vec3(0.0, 1.0, 0.0));
 
     // Initialize CUDA and GL components
     init();
@@ -413,7 +413,7 @@ int main(int argc, char** argv)
         if (g.type == GeomType::MESH && g.mesh.h_valid) {
             bool copied = false;
             for(Geom &s : scene->geoms) {
-                if (s.type == GeomType::MESH && s.mesh.h_valid && s.mesh.d_valid && s.mesh.label == g.mesh.label) {
+                if (s.type == GeomType::MESH && s.mesh.h_valid && s.mesh.d_valid && s.mesh.label == g.mesh.label && s.materialid == g.materialid) {
                     g.mesh.make_mesh_device_copy(s.mesh);
                     copied = true;
                     break;
@@ -492,6 +492,16 @@ int main(int argc, char** argv)
     return 0;
 }
 
+glm::vec3 ACESFilmHost(glm::vec3 x) {
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return glm::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
+}
+
+
 void saveImage()
 {
     float samples = iteration;
@@ -506,7 +516,8 @@ void saveImage()
             glm::vec3 pix = renderState->image[index] / samples;
 
             //reinhard op
-            pix = pix / (pix + glm::vec3(1.0f));
+            // pix = pix / (pix + glm::vec3(1.0f));
+            pix = ACESFilmHost(pix);
 
             //gamma correction
             pix = glm::pow(pix, glm::vec3(0.45f));

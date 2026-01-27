@@ -86,6 +86,12 @@ void Scene::loadFromJSON(const std::string& jsonName)
             newMaterial.roughness = roughness;
             newMaterial.metallic = metallic;
         }
+        else if (p["TYPE"] == "Glass")
+        {
+            const auto& col = p["RGB"];
+            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+            newMaterial.material_type = MaterialType::Glass;
+        }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
     }
@@ -288,6 +294,10 @@ void Scene::loadFromGLTF(const std::string& gltfName) {
             newMaterial.material_type = MaterialType::Emissive;
             newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
         }
+        else if (isGlass(mat)) {
+            newMaterial.material_type = MaterialType::Glass;
+            newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
+        }
         else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
             newMaterial.material_type = MaterialType::Diffuse;
         }
@@ -296,7 +306,7 @@ void Scene::loadFromGLTF(const std::string& gltfName) {
         }
 
         materials.push_back(newMaterial);
-        fmt::println("New Material with RGB {} of type {}", glm::to_string(newMaterial.color), (int)newMaterial.material_type);
+        // fmt::println("New Material {} with RGB {} of type {}", mat.name, glm::to_string(newMaterial.color), (int)newMaterial.material_type);
     }
 
     int camera_node = -1;
@@ -387,6 +397,31 @@ void Scene::loadFromGLTF(const std::string& gltfName) {
                     vertices[i] = { p[0], p[1], p[2] };
                 }
 
+                std::vector<glm::vec3> normals {};
+                auto it_norm = prim.attributes.find("NORMAL");
+
+                if (it_norm != prim.attributes.end()) {
+                    const auto& norm_accessor = model.accessors[it_norm->second];
+                    const auto& norm_buffer_view = model.bufferViews[norm_accessor.bufferView];
+                    const auto& norm_buffer = model.buffers[norm_buffer_view.buffer];
+
+                    normals.resize(norm_accessor.count);
+
+                    size_t norm_stride = norm_buffer_view.byteStride 
+                        ? norm_buffer_view.byteStride 
+                        : sizeof(float) * 3;
+
+                    const uint8_t* norm_base = 
+                        norm_buffer.data.data() + 
+                        norm_buffer_view.byteOffset + 
+                        norm_accessor.byteOffset;
+
+                    for (size_t i = 0; i < norm_accessor.count; i++) {
+                        const float* n = reinterpret_cast<const float*>(norm_base + i * norm_stride);
+                        normals[i] = glm::normalize(glm::vec3{ n[0], n[1], n[2] });
+                    }
+                }
+
                 std::vector<int> indices;
                 if (prim.indices >= 0) {
                     const auto& idx_accessor = model.accessors[prim.indices];
@@ -419,7 +454,7 @@ void Scene::loadFromGLTF(const std::string& gltfName) {
                     std::iota(indices.begin(), indices.end(), 0);
                 }
 
-                new_geom.mesh.make_mesh_host(vertices, indices, {}, {});
+                new_geom.mesh.make_mesh_host(vertices, indices, normals, indices);
                 new_geom.mesh.label = mesh.name;
                 new_geom.transform = global_transform;
                 new_geom.inverseTransform = glm::inverse(global_transform);
@@ -427,7 +462,6 @@ void Scene::loadFromGLTF(const std::string& gltfName) {
 
                 new_geom.materialid = (prim.material >= 0) ? prim.material + 1 : 0; // default material id
                 geoms.push_back(new_geom);
-                fmt::println("New Geom: {} with material id {}", mesh.name, new_geom.materialid);
             }
         }
 

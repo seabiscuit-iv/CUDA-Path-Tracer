@@ -222,7 +222,7 @@ void build_optix_accel_structure(
         1,
         &as_buffer_sizes
         ) );
-    fmt::println("Accel Structure Buffer Size: {} bytes", as_buffer_sizes.outputSizeInBytes);
+    // fmt::println("Accel Structure Buffer Size: {} bytes", as_buffer_sizes.outputSizeInBytes);
 
     CUdeviceptr d_as_temp_buffer;
     cudaMalloc(
@@ -252,7 +252,6 @@ void build_optix_accel_structure(
     cudaFree( reinterpret_cast<void*>( d_as_temp_buffer ) );
     cudaDeviceSynchronize();
 
-    fmt::println("Acceleration Structure Construction Complete");
 }
 
 
@@ -283,7 +282,6 @@ void compile_pathtracing_optix_module(OptixModule& module, OptixPipelineCompileO
         &module
         ) );
 
-    fmt::println("Optix Module Compilation Complete");
 }
 
 void create_optix_program_groups(

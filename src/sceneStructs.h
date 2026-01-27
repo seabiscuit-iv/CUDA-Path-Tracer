@@ -21,7 +21,8 @@ enum MaterialType {
     Diffuse = 0, // lambertian perfect diffuse
     Specular, // perfectly specular
     Emissive,
-    Microfacet
+    Microfacet,
+    Glass
 };
 
 
@@ -85,6 +86,7 @@ struct Material
     float emittance;
     float roughness = 0.0f;
     float metallic = 0.0f;
+    float alpha = 1.0f;
 };
 
 struct Camera

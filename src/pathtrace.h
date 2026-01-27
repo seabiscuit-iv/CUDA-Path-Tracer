@@ -2,6 +2,7 @@
 
 #include "scene.h"
 #include "utilities.h"
+#include "config.h"
 
 #define BLOCK_SIZE_1D 128
 

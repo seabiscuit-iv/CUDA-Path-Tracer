@@ -64,6 +64,7 @@ set(headers
     src/tinyobj/tiny_obj_loader.h
     src/tinygltf/tiny_gltf.h
     src/stack.h
+    src/config.h
 )
 
 set(sources

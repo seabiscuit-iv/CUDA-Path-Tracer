@@ -28,21 +28,16 @@
 #include "shaders/lambert.cu"
 #include "shaders/specular.cu"
 #include "shaders/cook_torrance.cu"
+#include "shaders/glass.cu"
 
-
-// CONFIGURATION
-#define STREAM_COMPACTION 0
-#define MATERIAL_SORTING 0  // enable this if you have a high number of materials
-
-// Set this to -1 when profiling off
-#define MAX_ITERATIONS -1
-
-// Bump the shader version to recompile shaders. We need a better solution for this
-#define SHADER_VER 2.8
-
-#define DRAW_BVH 0
-
-#define OPTIX 1
+__device__ glm::vec3 ACESFilm(glm::vec3 x) {
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return glm::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
+}
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, glm::vec3* image)
@@ -60,7 +55,8 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, g
         pix = pix * invIter;
         
         // reinhard op
-        pix = pix / (pix + glm::vec3(1.0f));
+        // pix = pix / (pix + glm::vec3(1.0f));
+        pix = ACESFilm(pix);
 
         //gamma correction
         pix = glm::pow(pix, glm::vec3(0.45f));
@@ -223,12 +219,6 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
     }
 }
 
-
-#define ENABLE_BOX_INTERSECTION     1
-#define ENABLE_SPHERE_INTERSECTION  0
-#define ENABLE_MESH_INTERSECTION    1
-
-
 __global__ void computeIntersections(
     int depth,
     int num_paths,
@@ -343,6 +333,9 @@ __global__ void shadePath(
         else if (material.material_type == MaterialType::Microfacet) {
             CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng);
         }
+        else if (material.material_type == MaterialType::Glass) {
+            TransmissiveGlass::sampleGlass(path, intersection, material, rng);
+        }
 
         if (material.material_type == MaterialType::Emissive) {
             path.color += path.throughput * material.emittance * material.color;
@@ -357,15 +350,27 @@ __global__ void shadePath(
         else if (material.material_type == MaterialType::Microfacet) {
             CookTorrance::shadePathCookTorrance(intersection, path, material);
         }
+        else if (material.material_type == MaterialType::Glass) {
+            TransmissiveGlass::shadePathGlass(path, intersection, material);
+        }
     }
 
     if (intersection.t == -1.0f) {
         path.kill = true;
     }
     else {
-        Ray &ray = path.ray;
-        ray.origin = getPointOnRay(ray, intersection.t);
+        Ray& ray = path.ray;
+        glm::vec3 hit_point = getPointOnRay(ray, intersection.t);
+        glm::vec3 normal = intersection.surfaceNormal;
         ray.direction = path.sample_dir;
+
+        float eps = 1e-4f;
+        if (glm::dot(ray.direction, normal) > 0.0f) {
+            ray.origin = hit_point + (normal * eps);
+        }
+        else {
+            ray.origin = hit_point - (normal * eps);
+        }   
     }
 }
 
