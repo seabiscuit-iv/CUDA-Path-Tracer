@@ -96,6 +96,8 @@ static uint32_t* dev_morton_codes;
 static bool* dev_hit_geom;
 static int* dev_path_scatter_buf;
 
+__constant__ PathTracerOptions DEV_OPTIONS;
+
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
     guiData = imGuiData;
@@ -158,6 +160,8 @@ void pathtraceInit(Scene* scene)
     cudaMemcpy( dev_vertex_buffer_locs, vertex_buffer_locs.data(), sizeof(glm::vec3*) * vertex_buffer_locs.size(), cudaMemcpyHostToDevice);
     cudaMemcpy( dev_triangle_buffer_locs, triangle_buffer_locs.data(), sizeof(Triangle*) * triangle_buffer_locs.size(), cudaMemcpyHostToDevice);
     cudaMemcpy( dev_normal_buffer_locs, normal_buffer_locs.data(), sizeof(glm::vec3*) * normal_buffer_locs.size(), cudaMemcpyHostToDevice);
+
+    cudaMemcpyToSymbol(DEV_OPTIONS, PathTracerOptions::Get(), sizeof(PathTracerOptions));
 
     checkCUDAError("pathtraceInit");
 }
@@ -324,34 +328,48 @@ __global__ void shadePath(
     if (intersection.t > 0.0f)
     {
         Material &material = materials[intersection.materialId];
-        if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
-            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
-        } 
-        else if (material.material_type == MaterialType::Specular) {
-            PerfectSpecular::sampleMirror(path, intersection);
-        }
-        else if (material.material_type == MaterialType::Microfacet) {
-            CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng);
-        }
-        else if (material.material_type == MaterialType::Glass) {
-            TransmissiveGlass::sampleGlass(path, intersection, material, rng);
-        }
 
-        if (material.material_type == MaterialType::Emissive) {
-            path.color += path.throughput * material.emittance * material.color;
-            path.kill = true;
-        } 
-        else if (material.material_type == MaterialType::Diffuse) {
-            Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
-        } 
-        else if (material.material_type == MaterialType::Specular) {
-            PerfectSpecular::shadePathSpecular(path, material);
+        if (DEV_OPTIONS.material_debug_mode) {
+            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
+
+            if (material.material_type == MaterialType::Emissive) {
+                path.color += path.throughput * material.emittance * material.color;
+                path.kill = true;
+            }
+            else {
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
+            }
         }
-        else if (material.material_type == MaterialType::Microfacet) {
-            CookTorrance::shadePathCookTorrance(intersection, path, material);
-        }
-        else if (material.material_type == MaterialType::Glass) {
-            TransmissiveGlass::shadePathGlass(path, intersection, material);
+        else {
+            if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
+                Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
+            } 
+            else if (material.material_type == MaterialType::Specular) {
+                PerfectSpecular::sampleMirror(path, intersection);
+            }
+            else if (material.material_type == MaterialType::Microfacet) {
+                CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng);
+            }
+            else if (material.material_type == MaterialType::Glass) {
+                TransmissiveGlass::sampleGlass(path, intersection, material, rng);
+            }
+
+            if (material.material_type == MaterialType::Emissive) {
+                path.color += path.throughput * material.emittance * material.color;
+                path.kill = true;
+            } 
+            else if (material.material_type == MaterialType::Diffuse) {
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
+            } 
+            else if (material.material_type == MaterialType::Specular) {
+                PerfectSpecular::shadePathSpecular(path, material);
+            }
+            else if (material.material_type == MaterialType::Microfacet) {
+                CookTorrance::shadePathCookTorrance(intersection, path, material);
+            }
+            else if (material.material_type == MaterialType::Glass) {
+                TransmissiveGlass::shadePathGlass(path, intersection, material);
+            }
         }
     }
 
@@ -561,7 +579,7 @@ __global__ void drawBVH(
 
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
-    const int traceDepth = hst_scene->state.traceDepth;
+    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 2 : hst_scene->state.traceDepth;
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
 
@@ -658,7 +676,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         #endif
 
 
-        #if DRAW_BVH
+        if (PathTracerOptions::Get()->debug_bvh) {
             drawBVH<<<numblocksPathSegmentTracing, blockSize1d>>> (
                 depth,
                 num_paths,
@@ -667,7 +685,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 hst_scene->geoms.size(),
                 dev_intersections
             );
-        #else
+        }
+        else {
             #if !OPTIX
                 // tracing
                 computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
@@ -725,14 +744,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             );
 
             cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));
-        #endif
+        }
 
         if (depth == traceDepth) {
             iterationComplete = true; // TODO: should be based off stream compaction results.
         }
 
-        #if STREAM_COMPACTION && !DRAW_BVH
-            if (depth == 1) {
+        #if STREAM_COMPACTION
+            if (depth == 1 && !PathTracerOptions::Get()->debug_bvh) {
                 auto new_end = thrust::partition(dPtr(dev_paths_sorted), dPtr(dev_paths_sorted) + num_paths, path_terminated());
                 last_num_paths = num_paths;
                 num_paths = new_end - dPtr(dev_paths_sorted);
@@ -753,9 +772,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
         cudaTimer.record(fmt::format("End, Iter {}", depth));
 
-        #if DRAW_BVH
+        if (PathTracerOptions::Get()->debug_bvh) {
             break;
-        #endif
+        }
     }
     
     // cudaTimer.report();

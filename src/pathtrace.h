@@ -10,3 +10,19 @@ void InitDataContainer(GuiDataContainer* guiData);
 void pathtraceInit(Scene *scene);
 void pathtraceFree();
 void pathtrace(uchar4 *pbo, int frame, int iteration);
+
+
+struct PathTracerOptions {
+    bool debug_bvh = false;
+    bool material_debug_mode = false;
+
+    static PathTracerOptions* Get() {
+        static PathTracerOptions instance;
+        return &instance;
+    }
+
+    // Prevent copying and assignment
+    PathTracerOptions(const PathTracerOptions&) = delete;
+    PathTracerOptions& operator=(const PathTracerOptions&) = delete;
+    PathTracerOptions() = default;
+};

@@ -5,6 +5,7 @@
 #include "sceneStructs.h"
 #include "utilities.h"
 #include "myoptix.h"
+#include "config.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
@@ -305,10 +306,22 @@ void RenderImGui()
     //    counter++;
     //ImGui::SameLine();
     //ImGui::Text("counter = %d", counter);
-    ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
+    bool changed = false;
+
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
+    
+    #if !OPTIX
+        changed |= ImGui::Checkbox("Debug BVH", &PathTracerOptions::Get()->debug_bvh);
+    #endif
+
+    changed |= ImGui::Checkbox("Material Debug Mode", &PathTracerOptions::Get()->material_debug_mode);
+    
     ImGui::End();
 
+    if (changed) {
+        camchanged = true;
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
