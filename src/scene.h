@@ -62,7 +62,7 @@ static const std::vector<int> CUBE_NORMAL_INDICES = {
     4, 4, 4, 4, 4, 4
 };
 
-const inline bool isGlass(const tinygltf::Material& mat) {
+inline bool isGlass(const tinygltf::Material& mat) {
     // 1. Explicit Transmission (Modern standard)
     if (mat.extensions.count("KHR_materials_transmission")) return true;
 

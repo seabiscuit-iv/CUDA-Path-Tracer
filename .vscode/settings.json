@@ -3,7 +3,7 @@
     "C_Cpp.default.compilerPath": "cl.exe",
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
-        "args": ["scenes\\maybe_broken_car.glb"]
+        "args": ["scenes\\all_cars.glb"]
     },
     "files.associations": {
         "array": "cpp",
