@@ -375,22 +375,47 @@ void mainLoop()
 int main(int argc, char** argv)
 {
     std::set_terminate(terminateHandler);
-
     startTimeString = currentTimeString();
 
-    if (argc < 2)
+    const char* sceneFile = nullptr;
+    const char* env_map_path = nullptr;
+
+    for (int i = 1; i < argc; ++i)
     {
-        printf("Usage: %s SCENEFILE.json\n", argv[0]);
-        return 1;
+        if (strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--envmap") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                printf("Error: %s requires a path\n", argv[i]);
+                return 1;
+            }
+            env_map_path = argv[++i];
+        }
+        else
+        {
+            // Assume first non-flag argument is the scene file
+            if (!sceneFile) {
+                sceneFile = argv[i];
+            }
+            else
+            {
+                printf("Error: unexpected argument '%s'\n", argv[i]);
+                return 1;
+            }
+        }
     }
 
-    const char* sceneFile = argv[1];
+    if (!sceneFile)
+    {
+        printf("Usage: %s SCENEFILE.json [-e|--envmap ENVMAP]\n", argv[0]);
+        return 1;
+    }
 
     //Create Instance for ImGUIData
     guiData = new GuiDataContainer();
 
     // Load scene file
-    scene = new Scene(sceneFile);
+    scene = new Scene(sceneFile, env_map_path);
 
     // Set up camera stuff from loaded path tracer settings
     iteration = 0;

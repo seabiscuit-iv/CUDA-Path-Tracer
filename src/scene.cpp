@@ -14,6 +14,7 @@
 #include "tinyobj/tiny_obj_loader.h"
 
 #include "tinygltf/tiny_gltf.h"
+#include "tinyexr/tinyexr.h"
 
 #include <fstream>
 #include <iostream>
@@ -24,18 +25,21 @@
 using namespace std;
 using json = nlohmann::json;
 
-Scene::Scene(string filename)
+Scene::Scene(string filename, const char* env_map_path)
 {
     cout << "Reading scene from " << filename << " ..." << endl;
+    if (env_map_path) {
+        printf("Using environment map: %s\n", env_map_path);
+    }
     cout << " " << endl;
     auto ext = filename.substr(filename.find_last_of('.'));
     if (ext == ".json")
     {
-        loadFromJSON(filename);
+        loadFromJSON(filename, env_map_path ? std::string(env_map_path) : std::string());
         return;
     }
     else if (ext == ".glb") {
-        loadFromGLTF(filename);
+        loadFromGLTF(filename, env_map_path ? std::string(env_map_path) : std::string());
         return;
     }
     else
@@ -45,7 +49,7 @@ Scene::Scene(string filename)
     }
 }
 
-void Scene::loadFromJSON(const std::string& jsonName)
+void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
 {
     std::ifstream f(jsonName);
     json data = json::parse(f);
@@ -231,12 +235,34 @@ void Scene::loadFromJSON(const std::string& jsonName)
     int arraylen = camera.resolution.x * camera.resolution.y;
     state.image.resize(arraylen);
     std::fill(state.image.begin(), state.image.end(), glm::vec3());
+
+    if (!exr_path.empty()) {
+        float* exr;
+        const char* exr_err = NULL;
+
+        int exr_ret = LoadEXR(&exr, &exr_width, &exr_height, exr_path.c_str(), &exr_err);
+
+        if (exr_ret != TINYEXR_SUCCESS) {
+            if (exr_err) {
+                fprintf(stderr, "ERR : %s\n", exr_err);
+                FreeEXRErrorMessage(exr_err);
+            }
+            exit(1);
+        } else {
+            fmt::println("Exr loading success: {} x {}", exr_width, exr_height);
+
+            exr_data.resize(exr_width * exr_height);
+            memcpy(exr_data.data(), exr, 4 * exr_width * exr_height * sizeof(float));
+
+            fmt::println("{} elems", exr_data.size());
+            free(exr);
+        }
+    }
 }
 
 
 
-
-void Scene::loadFromGLTF(const std::string& gltfName) {
+void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     fmt::println("Loading {} as .glb file", gltfName);
 
     tinygltf::Model model;
@@ -532,4 +558,27 @@ void Scene::loadFromGLTF(const std::string& gltfName) {
     int arraylen = camera.resolution.x * camera.resolution.y;
     state.image.resize(arraylen);
     std::fill(state.image.begin(), state.image.end(), glm::vec3());
+
+    if (!exr_path.empty()) {
+        float* exr;
+        const char* exr_err = NULL;
+
+        int exr_ret = LoadEXR(&exr, &exr_width, &exr_height, exr_path.c_str(), &exr_err);
+
+        if (exr_ret != TINYEXR_SUCCESS) {
+            if (exr_err) {
+                fprintf(stderr, "ERR : %s\n", exr_err);
+                FreeEXRErrorMessage(exr_err);
+            }
+            exit(1);
+        } else {
+            fmt::println("Exr loading success: {} x {}", exr_width, exr_height);
+
+            exr_data.resize(exr_width * exr_height);
+            memcpy(exr_data.data(), exr, 4 * exr_width * exr_height * sizeof(float));
+
+            fmt::println("{} elems", exr_data.size());
+            free(exr);
+        }
+    }
 }

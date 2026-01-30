@@ -9,15 +9,18 @@
 class Scene
 {
 private:
-    void loadFromJSON(const std::string& jsonName);
-    void loadFromGLTF(const std::string& gltfName);
+    void loadFromJSON(const std::string& jsonName, std::string env_map_path);
+    void loadFromGLTF(const std::string& gltfName, std::string env_map_path);
 public:
-    Scene(std::string filename);
+    Scene(std::string filename, const char* env_map);
 
     std::vector<Geom> geoms;
     std::vector<Material> materials;
     RenderState state;
 
+    std::vector<glm::vec4> exr_data;
+    int exr_width;
+    int exr_height;
     
     OptixPipeline optix_pipeline;
     OptixTraversableHandle ias_handle;

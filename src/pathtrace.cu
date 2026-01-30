@@ -30,12 +30,14 @@
 #include "shaders/cook_torrance.cu"
 #include "shaders/glass.cu"
 
+#define M_PI 3.14159
+
 __device__ glm::vec3 ACESFilm(glm::vec3 x) {
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
+    const float a = 2.51f;
+    const float b = 0.03f;
+    const float c = 2.43f;
+    const float d = 0.59f;
+    const float e = 0.14f;
     return glm::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
 }
 
@@ -95,6 +97,9 @@ static CUdeviceptr d_optix_paramters;
 static uint32_t* dev_morton_codes;
 static bool* dev_hit_geom;
 static int* dev_path_scatter_buf;
+
+static cudaArray_t dev_exr_array;
+static cudaTextureObject_t exr_texture = 0;
 
 __constant__ PathTracerOptions DEV_OPTIONS;
 
@@ -163,6 +168,26 @@ void pathtraceInit(Scene* scene)
 
     cudaMemcpyToSymbol(DEV_OPTIONS, PathTracerOptions::Get(), sizeof(PathTracerOptions));
 
+    if (!scene->exr_data.empty()) {
+        // exr loading on GPU
+        cudaChannelFormatDesc exr_channel_desc = cudaCreateChannelDesc<float4>();
+        cudaMallocArray(&dev_exr_array, &exr_channel_desc, scene->exr_width, scene->exr_height);
+        cudaMemcpyToArray(dev_exr_array, 0, 0, scene->exr_data.data(), scene->exr_width * scene->exr_height * sizeof(glm::vec4), cudaMemcpyHostToDevice);
+
+        cudaResourceDesc res_desc = {};
+        res_desc.resType = cudaResourceTypeArray;
+        res_desc.res.array.array = dev_exr_array;
+
+        cudaTextureDesc tex_desc = {};
+        tex_desc.addressMode[0] = cudaAddressModeWrap;
+        tex_desc.addressMode[1] = cudaAddressModeWrap;
+        tex_desc.filterMode = cudaFilterModeLinear;
+        tex_desc.readMode = cudaReadModeElementType;
+        tex_desc.normalizedCoords = 1;
+
+        cudaCreateTextureObject(&exr_texture, &res_desc, &tex_desc, nullptr);
+    }
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -185,6 +210,10 @@ void pathtraceFree()
     cudaFree(dev_normal_buffer_locs);
     
     cudaFree(reinterpret_cast<void*>(d_optix_paramters));
+
+    // free exr
+    cudaDestroyTextureObject(exr_texture);
+    cudaFreeArray(dev_exr_array);
 
     checkCUDAError("pathtraceFree");
 }
@@ -311,7 +340,9 @@ __global__ void shadePath(
     PathSegment* __restrict__ pathSegments,
     Material* __restrict__ materials,
     ShadeableIntersection* __restrict__ shadeableIntersections,
-    int depth
+    int depth,
+    bool has_exr,
+    cudaTextureObject_t exr
 )
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -371,6 +402,19 @@ __global__ void shadePath(
                 TransmissiveGlass::shadePathGlass(path, intersection, material);
             }
         }
+    }   
+    else if (!path.kill && has_exr) {
+        // hdri
+        glm::vec3 d = glm::normalize(path.ray.direction);
+        float phi   = atan2f(d.z, d.x);       // [-pi, pi]
+        float theta = glm::acos(glm::clamp(d.y, -1.0f, 1.0f)); // [0, pi]
+
+        float u = (phi + M_PI) * (1.0f / (2.0f * M_PI));
+        float v = theta * (1.0f / M_PI);
+
+        float4 env = tex2D<float4>(exr, u, v);
+
+        path.color += path.throughput * glm::vec3(env.x, env.y, env.z);
     }
 
     if (intersection.t == -1.0f) {
@@ -740,7 +784,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_paths_sorted,
                 dev_materials,
                 dev_intersections,
-                depth
+                depth,
+                !hst_scene->exr_data.empty(),
+                exr_texture
             );
 
             cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));

@@ -63,6 +63,7 @@ set(headers
     src/mesh.h
     src/tinyobj/tiny_obj_loader.h
     src/tinygltf/tiny_gltf.h
+    src/tinyexr/tinyexr.h
     src/stack.h
     src/config.h
 )

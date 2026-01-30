@@ -21,3 +21,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "tinygltf/tiny_gltf.h"
+
+#define TINYEXR_IMPLEMENTATION
+#define TINYEXR_USE_STB_ZLIB (1)
+#define TINYEXR_USE_MINIZ (0)
+#include "tinyexr/tinyexr.h"

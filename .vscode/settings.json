@@ -3,7 +3,11 @@
     "C_Cpp.default.compilerPath": "cl.exe",
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
-        "args": ["scenes\\all_cars.glb"]
+        "args": [
+            "scenes\\cars_independent.glb",
+            "--envmap",
+            "scenes\\exr\\brown_photostudio_01_4k.exr"
+        ]
     },
     "files.associations": {
         "array": "cpp",
