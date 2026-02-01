@@ -254,7 +254,6 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
             exr_data.resize(exr_width * exr_height);
             memcpy(exr_data.data(), exr, 4 * exr_width * exr_height * sizeof(float));
 
-            fmt::println("{} elems", exr_data.size());
             free(exr);
         }
     }
@@ -533,13 +532,10 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     glm::vec3 eye = glm::vec3(camera_transform[3]);
 
     camera.position = eye;
-    fmt::println("Camera pos: {}", glm::to_string(eye));
     
     camera.view  = -glm::normalize(glm::vec3(camera_transform[2]));
     camera.right = glm::normalize(glm::vec3(camera_transform[0])); 
     camera.up    = glm::normalize(glm::vec3(camera_transform[1]));
-
-    fmt::println("View Dir: {}", glm::to_string(camera.view));
 
     camera.lookAt = camera.position + camera.view;
 
@@ -548,8 +544,6 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;
     float fovx = (2.0f * atan(xscaled) * 180) / PI;
     camera.fov = glm::vec2(fovx, fovy);
-
-    fmt::println("{}", glm::to_string(camera.fov));
 
     camera.pixelLength = glm::vec2(2 * xscaled / (float)camera.resolution.x,
         2 * yscaled / (float)camera.resolution.y);
@@ -577,7 +571,6 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
             exr_data.resize(exr_width * exr_height);
             memcpy(exr_data.data(), exr, 4 * exr_width * exr_height * sizeof(float));
 
-            fmt::println("{} elems", exr_data.size());
             free(exr);
         }
     }
