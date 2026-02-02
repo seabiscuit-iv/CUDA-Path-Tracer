@@ -4,9 +4,7 @@
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
         "args": [
-            "scenes\\cars_independent.glb",
-            "--envmap",
-            "scenes\\exr\\brown_photostudio_01_4k.exr"
+            "scenes\\all_cars.glb"
         ]
     },
     "files.associations": {

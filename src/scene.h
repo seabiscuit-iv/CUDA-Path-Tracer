@@ -3,6 +3,7 @@
 #include "sceneStructs.h"
 #include <vector>
 #include "optix.h"
+#include "texture.h"
 #include <glm/glm.hpp>
 #include "tinygltf/tiny_gltf.h"
 

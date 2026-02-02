@@ -16,6 +16,8 @@
 #include "tinygltf/tiny_gltf.h"
 #include "tinyexr/tinyexr.h"
 
+#include "texture.h"
+
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -290,7 +292,36 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     defaultMat.material_type = MaterialType::Emissive;
     defaultMat.emittance = 10.0f;
     materials.push_back(defaultMat);
+    
 
+    for (auto& tex : model.textures) {
+        int img_index = tex.source;
+        tinygltf::Image img = model.images[img_index];
+
+        int width = img.width;
+        int height = img.height;
+        int components = img.component;
+
+        if (components != 4) {
+            fmt::println("No support yet for {} component images", components);
+            exit(1);
+        }
+
+        fmt::println("Loading {} x {} texture of {} bytes", img.width, img.height, img.image.size());
+
+        std::vector<glm::vec4> data;
+
+        for (int i = 0; i < width * height; i++) {
+            data.push_back(glm::vec4(
+                ((float)img.image[4 * i]) / 255.0f,
+                ((float)img.image[4 * i + 1]) / 255.0f,
+                ((float)img.image[4 * i + 2]) / 255.0f,
+                ((float)img.image[4 * i + 3]) / 255.0f
+            ));
+        }
+
+        TextureHandler::get().load_texture(data, width, height);
+    }
 
     for (auto& mat : model.materials) {
         Material newMaterial{};

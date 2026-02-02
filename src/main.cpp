@@ -466,6 +466,8 @@ int main(int argc, char** argv)
         }
     }
 
+    TextureHandler::get().load_textures_on_device();
+
     OptixModule module = nullptr;
     OptixPipelineCompileOptions pipeline_compile_options = {};
     compile_pathtracing_optix_module(module, pipeline_compile_options); 

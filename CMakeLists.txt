@@ -66,6 +66,7 @@ set(headers
     src/tinyexr/tinyexr.h
     src/stack.h
     src/config.h
+    src/texture.h
 )
 
 set(sources
@@ -82,6 +83,7 @@ set(sources
     src/scene.cpp
     src/utilities.cpp
     src/stack.cu
+    src/texture.cu
 )
 
 set(imgui_headers
