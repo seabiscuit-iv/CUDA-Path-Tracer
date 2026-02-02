@@ -75,6 +75,7 @@ struct Material
 {
     MaterialType material_type;
     glm::vec3 color;
+    int albedo_tex;
     struct
     {
         float exponent;

@@ -71,13 +71,6 @@
     "Objects":
     [
         {
-            "TYPE":"cube",
-            "MATERIAL":"light",
-            "TRANS":[0.0,15.0,0.0],
-            "ROTAT":[0.0,0.0,0.0],
-            "SCALE":[3.0,0.3,3.0]
-        },
-        {
             "TYPE":"obj",
             "FILE":"obj\\dragon_highres.obj",
             "MATERIAL":"microfacet_green",

@@ -335,6 +335,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
         newMaterial.metallic = mat.pbrMetallicRoughness.metallicFactor;
         newMaterial.roughness = mat.pbrMetallicRoughness.roughnessFactor;
 
+        newMaterial.albedo_tex = mat.pbrMetallicRoughness.baseColorTexture.index;
 
         float emissive_strength = 1.0f;
         if (mat.extensions.find("KHR_materials_emissive_strength") != mat.extensions.end()) {

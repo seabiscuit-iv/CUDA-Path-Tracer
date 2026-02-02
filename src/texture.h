@@ -6,7 +6,7 @@
 struct TextureData {
     int width;
     int height;
-    glm::vec4* data;
+    cudaTextureObject_t tex;
 };
 
 struct TextureHandler {
@@ -32,4 +32,5 @@ private:
     TextureData* dev_textures;
 
     std::vector<std::vector<glm::vec4>> host_texture_data;
+    std::vector<cudaArray_t> cuda_arrays;
 };
