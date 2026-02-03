@@ -464,11 +464,11 @@ __global__ void shadePath(
             Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
 
             if (material.material_type == MaterialType::Emissive) {
-                path.color += path.throughput * material.emittance * material.color;
+                path.color += path.throughput * material.emittance * materialColor;
                 path.kill = true;
             }
             else {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
+            Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
             }
         }
         else {
@@ -486,7 +486,7 @@ __global__ void shadePath(
             }
 
             if (material.material_type == MaterialType::Emissive) {
-                path.color += path.throughput * material.emittance * material.color;
+                path.color += path.throughput * material.emittance * materialColor;
                 path.kill = true;
             } 
             else if (material.material_type == MaterialType::Diffuse) {

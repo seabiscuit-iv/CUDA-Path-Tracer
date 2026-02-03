@@ -133,7 +133,15 @@ extern "C" __global__ void __closesthit__ch()
 
     normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
     tangent = normalize(optixTransformVectorFromObjectToWorldSpace(tangent));
-    tangent = normalize(tangent - dot(tangent, normal) * normal);
+
+    float3 T = tangent - dot(tangent, normal) * normal;
+    float len2 = dot(T, T);
+    if (len2 > 1e-10f) {
+        tangent = T * rsqrtf(len2);
+    } else {
+        tangent = (fabsf(normal.x) > 0.9f) ? make_float3(0, 1, 0) : make_float3(1, 0, 0);
+        tangent = normalize(cross(tangent, normal));
+    }
 
     shadeable_intersection.materialId = material_id;
     shadeable_intersection.t = optixGetRayTmax();

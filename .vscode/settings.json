@@ -4,9 +4,7 @@
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
         "args": [
-            "scenes\\locked_in_car.glb",
-            "--envmap",
-            "C:\\Users\\saahi\\Documents\\Blender Assets\\HDRIs\\goegap_road_4k.exr"
+            "scenes\\tokyo.glb",
         ]
     },
     "files.associations": {

@@ -288,9 +288,8 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     }
 
     Material defaultMat{};
-    defaultMat.color = glm::vec3(1.0f);
-    defaultMat.material_type = MaterialType::Emissive;
-    defaultMat.emittance = 10.0f;
+    defaultMat.color = glm::vec3(0.5f);
+    defaultMat.material_type = MaterialType::Diffuse;
     materials.push_back(defaultMat);
     
 
@@ -323,6 +322,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
         TextureHandler::get().load_texture(data, width, height);
     }
 
+    int material_base_offset = materials.size();
     for (auto& mat : model.materials) {
         Material newMaterial{};
         if (mat.pbrMetallicRoughness.baseColorFactor.size() >= 3) {
@@ -335,9 +335,35 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
         newMaterial.metallic = mat.pbrMetallicRoughness.metallicFactor;
         newMaterial.roughness = mat.pbrMetallicRoughness.roughnessFactor;
 
-        newMaterial.albedo_tex = mat.pbrMetallicRoughness.baseColorTexture.index;
-        if (mat.pbrMetallicRoughness.baseColorTexture.extensions.find("KHR_texture_transform") != mat.pbrMetallicRoughness.baseColorTexture.extensions.end()) {
-            auto& ext = mat.pbrMetallicRoughness.baseColorTexture.extensions.at("KHR_texture_transform");
+        float emissive_strength = 1.0f;
+        if (mat.extensions.find("KHR_materials_emissive_strength") != mat.extensions.end()) {
+            const auto& ext = mat.extensions.at("KHR_materials_emissive_strength");
+
+            if (ext.Has("emissiveStrength")) {
+                emissive_strength = static_cast<float>(ext.Get("emissiveStrength").GetNumberAsDouble());
+            }
+        }
+        newMaterial.emittance = emissive_strength * glm::length(glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]));
+
+        if (newMaterial.emittance > 0.01f) {
+            newMaterial.material_type = MaterialType::Emissive;
+            newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
+        }
+        else if (isGlass(mat)) {
+            newMaterial.material_type = MaterialType::Glass;
+            newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
+        }
+        else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
+            newMaterial.material_type = MaterialType::Diffuse;
+        }
+        else {
+            newMaterial.material_type = MaterialType::Microfacet;
+        }
+
+        auto& albedo_tex_info = newMaterial.material_type == MaterialType::Emissive ? mat.emissiveTexture : mat.pbrMetallicRoughness.baseColorTexture;
+        newMaterial.albedo_tex = albedo_tex_info.index;
+        if (albedo_tex_info.extensions.find("KHR_texture_transform") != albedo_tex_info.extensions.end()) {
+            auto& ext = albedo_tex_info.extensions.at("KHR_texture_transform");
             
             if (ext.Has("offset")) {
                 const auto& o = ext.Get("offset").Get<tinygltf::Value::Array>();
@@ -386,33 +412,8 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
         }
 
 
-        float emissive_strength = 1.0f;
-        if (mat.extensions.find("KHR_materials_emissive_strength") != mat.extensions.end()) {
-            const auto& ext = mat.extensions.at("KHR_materials_emissive_strength");
-
-            if (ext.Has("emissiveStrength")) {
-                emissive_strength = static_cast<float>(ext.Get("emissiveStrength").GetNumberAsDouble());
-            }
-        }
-        newMaterial.emittance = emissive_strength * glm::length(glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]));
-
-        if (newMaterial.emittance > 0.01f) {
-            newMaterial.material_type = MaterialType::Emissive;
-            newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
-        }
-        else if (isGlass(mat)) {
-            newMaterial.material_type = MaterialType::Glass;
-            newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
-        }
-        else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
-            newMaterial.material_type = MaterialType::Diffuse;
-        }
-        else {
-            newMaterial.material_type = MaterialType::Microfacet;
-        }
-
         materials.push_back(newMaterial);
-        // fmt::println("New Material {} with RGB {} of type {}", mat.name, glm::to_string(newMaterial.color), (int)newMaterial.material_type);
+        // fmt::println("New Material {} with RGB {} of type {} at index {} and has texture {}", mat.name, glm::to_string(newMaterial.color), (int)newMaterial.material_type, materials.size() - 1, newMaterial.albedo_tex >= 0);
     }
 
     int camera_node = -1;
@@ -596,7 +597,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
                 new_geom.inverseTransform = glm::inverse(global_transform);
                 new_geom.invTranspose = glm::inverseTranspose(global_transform);
 
-                new_geom.materialid = (prim.material >= 0) ? prim.material + 1 : 0; // default material id
+                new_geom.materialid = (prim.material >= 0) ? prim.material + material_base_offset : 0; // default material id
                 geoms.push_back(new_geom);
             }
         }
@@ -633,8 +634,15 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
     Camera& camera = state.camera;
     RenderState& state = this->state;
-    camera.resolution.y = 1000; // this should be customized
-    camera.resolution.x = aspect * camera.resolution.y; // this should be customized
+
+    if (aspect >= 1.0) {
+        camera.resolution.y = 1000;
+        camera.resolution.x = aspect * camera.resolution.y;
+    } else {
+        camera.resolution.x = 1000;
+        camera.resolution.y = camera.resolution.x / aspect;
+    }
+
     float fovy = glm::degrees(gltf_camera.perspective.yfov);
     state.iterations = 5000; // this should be customized
     state.traceDepth = 8; // this should be customized
