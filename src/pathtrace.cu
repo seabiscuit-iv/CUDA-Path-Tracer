@@ -547,7 +547,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
         PathSegment iterationPath = iterationPaths[index];
         glm::vec3 color = iterationPath.color;
 
-        float maxIntensity = 10.0f;
+        float maxIntensity = 1000.0f;
         float luminance = glm::dot(color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
         if (luminance > maxIntensity) {
             color *= (maxIntensity / luminance);

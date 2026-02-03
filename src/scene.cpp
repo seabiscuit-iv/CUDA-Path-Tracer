@@ -349,7 +349,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
             newMaterial.material_type = MaterialType::Emissive;
             newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
         }
-        else if (isGlass(mat)) {
+        else if (isGlass(mat) && newMaterial.metallic < 0.01f && newMaterial.roughness < 0.01f) {
             newMaterial.material_type = MaterialType::Glass;
             newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
         }
