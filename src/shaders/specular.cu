@@ -14,10 +14,11 @@
 namespace PerfectSpecular {
     __device__ void shadePathSpecular(
         PathSegment &path,
-        Material &material
+        Material &material,
+        glm::vec3 color
     )
     {
-        path.throughput *= material.color;
+        path.throughput *= color;
     }   
 
 

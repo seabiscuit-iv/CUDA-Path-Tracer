@@ -31,11 +31,10 @@ namespace Lambert {
         int depth,
         ShadeableIntersection &intersection,
         PathSegment &path,
-        const Material &material
+        const Material &material,
+        glm::vec3 materialColor
     )
     {
-        glm::vec3 materialColor = material.color;
-
         glm::vec3 brdf = BRDF(materialColor);
         float absdot = max(0.0f, glm::dot(path.sample_dir, intersection.surfaceNormal));
         float pdf = max(1e-6f, PDF(path.sample_dir, intersection.surfaceNormal));

@@ -24,6 +24,7 @@
 
 #include "common.cu"
 #include "myoptix.h"
+#include "texture.h"
 
 #include "shaders/lambert.cu"
 #include "shaders/specular.cu"
@@ -31,6 +32,8 @@
 #include "shaders/glass.cu"
 
 #define M_PI 3.14159
+
+#define ACES 1
 
 __device__ glm::vec3 ACESFilm(glm::vec3 x) {
     const float a = 2.51f;
@@ -58,7 +61,9 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, g
         
         // reinhard op
         // pix = pix / (pix + glm::vec3(1.0f));
-        pix = ACESFilm(pix);
+        #if ACES
+            pix = ACESFilm(pix);
+        #endif
 
         //gamma correction
         pix = glm::pow(pix, glm::vec3(0.45f));
@@ -90,6 +95,7 @@ static int* dev_material_ids; //for optix
 static glm::vec3** dev_vertex_buffer_locs;
 static Triangle** dev_triangle_buffer_locs;
 static glm::vec3** dev_normal_buffer_locs;
+static glm::vec2** dev_uv_buffer_locs;
 
 // Optix
 static CUdeviceptr d_optix_paramters;
@@ -149,22 +155,26 @@ void pathtraceInit(Scene* scene)
     std::vector<glm::vec3*> vertex_buffer_locs;
     std::vector<Triangle*> triangle_buffer_locs;
     std::vector<glm::vec3*> normal_buffer_locs;
+    std::vector<glm::vec2*> uv_buffer_locs;
 
     for (const Geom& geo : scene->geoms) {
         if (geo.type == GeomType::MESH) {
             vertex_buffer_locs.push_back(geo.mesh.d_verts);
             triangle_buffer_locs.push_back(geo.mesh.d_triangles);
             normal_buffer_locs.push_back(geo.mesh.has_normal_buffers ? geo.mesh.d_normals : nullptr);
+            uv_buffer_locs.push_back(geo.mesh.has_uvs ? geo.mesh.d_uvs : nullptr);
         }
     }
 
     cudaMalloc( &dev_vertex_buffer_locs, sizeof(glm::vec3*) * vertex_buffer_locs.size() );
     cudaMalloc( &dev_triangle_buffer_locs, sizeof(Triangle*) * triangle_buffer_locs.size() );
     cudaMalloc( &dev_normal_buffer_locs, sizeof(glm::vec3*) * normal_buffer_locs.size() );
+    cudaMalloc( &dev_uv_buffer_locs, sizeof(glm::vec2*) * uv_buffer_locs.size() );
 
     cudaMemcpy( dev_vertex_buffer_locs, vertex_buffer_locs.data(), sizeof(glm::vec3*) * vertex_buffer_locs.size(), cudaMemcpyHostToDevice);
     cudaMemcpy( dev_triangle_buffer_locs, triangle_buffer_locs.data(), sizeof(Triangle*) * triangle_buffer_locs.size(), cudaMemcpyHostToDevice);
     cudaMemcpy( dev_normal_buffer_locs, normal_buffer_locs.data(), sizeof(glm::vec3*) * normal_buffer_locs.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy( dev_uv_buffer_locs, uv_buffer_locs.data(), sizeof(glm::vec2*) * uv_buffer_locs.size(), cudaMemcpyHostToDevice);
 
     cudaMemcpyToSymbol(DEV_OPTIONS, PathTracerOptions::Get(), sizeof(PathTracerOptions));
 
@@ -208,6 +218,7 @@ void pathtraceFree()
     cudaFree(dev_vertex_buffer_locs);
     cudaFree(dev_triangle_buffer_locs);
     cudaFree(dev_normal_buffer_locs);
+    cudaFree(dev_uv_buffer_locs);
     
     cudaFree(reinterpret_cast<void*>(d_optix_paramters));
 
@@ -342,7 +353,8 @@ __global__ void shadePath(
     ShadeableIntersection* __restrict__ shadeableIntersections,
     int depth,
     bool has_exr,
-    cudaTextureObject_t exr
+    cudaTextureObject_t exr,
+    TextureData* textures
 )
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -360,6 +372,13 @@ __global__ void shadePath(
     {
         Material &material = materials[intersection.materialId];
 
+        glm::vec3 materialColor = material.color;
+
+        if(material.albedo_tex >= 0) {
+            float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, intersection.uvs.x, intersection.uvs.y);
+            materialColor = glm::vec3(tex.x, tex.y, tex.z);
+        }
+
         if (DEV_OPTIONS.material_debug_mode) {
             Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
 
@@ -368,7 +387,7 @@ __global__ void shadePath(
                 path.kill = true;
             }
             else {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material, materialColor);
             }
         }
         else {
@@ -379,7 +398,7 @@ __global__ void shadePath(
                 PerfectSpecular::sampleMirror(path, intersection);
             }
             else if (material.material_type == MaterialType::Microfacet) {
-                CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng);
+                CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng, materialColor);
             }
             else if (material.material_type == MaterialType::Glass) {
                 TransmissiveGlass::sampleGlass(path, intersection, material, rng);
@@ -390,16 +409,16 @@ __global__ void shadePath(
                 path.kill = true;
             } 
             else if (material.material_type == MaterialType::Diffuse) {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material);
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material, materialColor);
             } 
             else if (material.material_type == MaterialType::Specular) {
-                PerfectSpecular::shadePathSpecular(path, material);
+                PerfectSpecular::shadePathSpecular(path, material, materialColor);
             }
             else if (material.material_type == MaterialType::Microfacet) {
-                CookTorrance::shadePathCookTorrance(intersection, path, material);
+                CookTorrance::shadePathCookTorrance(intersection, path, material, materialColor);
             }
             else if (material.material_type == MaterialType::Glass) {
-                TransmissiveGlass::shadePathGlass(path, intersection, material);
+                TransmissiveGlass::shadePathGlass(path, intersection, material, materialColor);
             }
         }
     }   
@@ -623,6 +642,12 @@ __global__ void drawBVH(
 
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
+    // fmt::println("PATHTRACE: {} vs {}", sizeof(ShadeableIntersection), sizeof(OptixShadeableIntersection));
+    // fmt::println("Offset 0: {} vs {}", offsetof(ShadeableIntersection, t), offsetof(OptixShadeableIntersection, t));
+    // fmt::println("Offset 1: {} vs {}", offsetof(ShadeableIntersection, surfaceNormal), offsetof(OptixShadeableIntersection, surfaceNormal));
+    // fmt::println("Offset 2: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
+    // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
+
     const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 2 : hst_scene->state.traceDepth;
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -753,6 +778,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 optix_params.vertex_buffer_locations = (float3**)dev_vertex_buffer_locs;
                 optix_params.triangle_buffer_locations = (OptixTriangle**)dev_triangle_buffer_locs;
                 optix_params.normal_buffer_locations = (float3**)dev_normal_buffer_locs;
+                optix_params.uv_buffer_locations = (float2**)dev_uv_buffer_locs;
                 cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
                 OPTIX_CHECK(
                     optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);
@@ -786,7 +812,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_intersections,
                 depth,
                 !hst_scene->exr_data.empty(),
-                exr_texture
+                exr_texture,
+                TextureHandler::get().dev_textures
             );
 
             cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));

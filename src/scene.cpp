@@ -111,7 +111,7 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
         if (type == "cube")
         {
             newGeom.type = GeomType::MESH;  
-            newGeom.mesh.make_mesh_host(CUBE_VERTICES, CUBE_INDICES, CUBE_NORMALS, CUBE_NORMAL_INDICES);
+            newGeom.mesh.make_mesh_host(CUBE_VERTICES, CUBE_INDICES, CUBE_NORMALS, CUBE_NORMAL_INDICES, {}, {});
             newGeom.mesh.label = "Cube";
         }
         else if (type == "sphere")
@@ -131,7 +131,7 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
                 hostIndices.push_back(int(i));
             }
 
-            newGeom.mesh.make_mesh_host(hostVerts, hostIndices, std::vector<glm::vec3>(), std::vector<int>());
+            newGeom.mesh.make_mesh_host(hostVerts, hostIndices, std::vector<glm::vec3>(), std::vector<int>(), {}, {});
             newGeom.mesh.label = fmt::format("__OBJECT{}__", count);
         }
         else if (type == "obj")
@@ -181,7 +181,7 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
                 }
             }
             
-            newGeom.mesh.make_mesh_host(hostVerts, hostIndices, hostNormals, hostNormalIndices);
+            newGeom.mesh.make_mesh_host(hostVerts, hostIndices, hostNormals, hostNormalIndices, {}, {});
             newGeom.mesh.label = file_name;
         }
         else    
@@ -479,6 +479,36 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
                     }
                 }
 
+                
+                std::vector<glm::vec2> uvs {};
+                auto it_uv = prim.attributes.find("TEXCOORD_0");
+
+                if (it_uv != prim.attributes.end()) {
+                    const auto& uv_accessor = model.accessors[it_uv->second];
+                    const auto& uv_buffer_view = model.bufferViews[uv_accessor.bufferView];
+                    const auto& uv_buffer = model.buffers[uv_buffer_view.buffer];
+
+                    assert(uv_accessor.type == TINYGLTF_TYPE_VEC2);
+                    assert(uv_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+                    uvs.resize(uv_accessor.count);
+
+                    size_t uv_stride = uv_buffer_view.byteStride 
+                        ? uv_buffer_view.byteStride 
+                        : sizeof(float) * 2;
+
+                    const uint8_t* uv_base = 
+                        uv_buffer.data.data() + 
+                        uv_buffer_view.byteOffset + 
+                        uv_accessor.byteOffset;
+
+                    for (size_t i = 0; i < uv_accessor.count; i++) {
+                        const float* uv = reinterpret_cast<const float*>(uv_base + i * uv_stride);
+                        uvs[i] = glm::vec2{ uv[0], uv[1] };
+                    }
+                }
+
+
                 std::vector<int> indices;
                 if (prim.indices >= 0) {
                     const auto& idx_accessor = model.accessors[prim.indices];
@@ -511,7 +541,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
                     std::iota(indices.begin(), indices.end(), 0);
                 }
 
-                new_geom.mesh.make_mesh_host(vertices, indices, normals, indices);
+                new_geom.mesh.make_mesh_host(vertices, indices, normals, indices, uvs, indices);
                 new_geom.mesh.label = mesh.name;
                 new_geom.transform = global_transform;
                 new_geom.inverseTransform = glm::inverse(global_transform);

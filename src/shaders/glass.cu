@@ -93,9 +93,10 @@ namespace TransmissiveGlass
     __device__ void shadePathGlass(
         PathSegment &path, 
         ShadeableIntersection &intersection, 
-        const Material &material
+        const Material &material,
+        glm::vec3 color
     ) {
-        path.throughput *= glm::mix(glm::vec3(1.0), material.color, material.alpha);
+        path.throughput *= glm::mix(glm::vec3(1.0), color, material.alpha);
     }
 }
 

@@ -29,12 +29,14 @@ enum MaterialType {
 struct Triangle {
     uint32_t v_indices[3];
     uint32_t n_indices[3];
+    uint32_t uv_indices[3];
 
-    Triangle(int v[3], int n[3])
+    Triangle(int v[3], int n[3], int uv[3])
     {
         for(int i = 0; i < 3; i++) {
             v_indices[i] = v[i];
             n_indices[i] = n[i];
+            uv_indices[i] = uv[i];
         }
     }
 
@@ -126,7 +128,9 @@ struct PathSegment
 // 2) BSDF evaluation: generate a new ray
 struct ShadeableIntersection
 {
-  float t;
-  glm::vec3 surfaceNormal;
-  int materialId;
-};
+  float t;                  // 0
+  glm::vec3 surfaceNormal;  // 4
+  int materialId;           // 16
+  float _pad0;              // 20 (This fixes your Offset 3 mismatch)
+  glm::vec2 uvs;            // 24
+}; // Total size should be 32. No alignas(16) needed if manually padded.

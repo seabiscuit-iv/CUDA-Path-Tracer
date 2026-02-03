@@ -83,6 +83,7 @@ extern "C" __global__ void __closesthit__ch()
     float3* vertex_buffer = params.vertex_buffer_locations[object_ID];
     OptixTriangle* triangle_buffer = params.triangle_buffer_locations[object_ID];
     float3* normal_buffer = params.normal_buffer_locations[object_ID];
+    float2* uv_buffer = params.uv_buffer_locations[object_ID];
 
     OptixTriangle& triangle = triangle_buffer[prim_ID];
 
@@ -105,10 +106,23 @@ extern "C" __global__ void __closesthit__ch()
         normal = normalize(bA * A + barycentrics.x * B + barycentrics.y * C);
     }
 
+    float2 uv;
+    if (uv_buffer != nullptr) {
+        float2 A = uv_buffer[triangle.uv_indices[0]];
+        float2 B = uv_buffer[triangle.uv_indices[1]];
+        float2 C = uv_buffer[triangle.uv_indices[2]];
+
+        float bA = 1.0f - barycentrics.x - barycentrics.y;
+
+        uv = bA * A + barycentrics.x * B + barycentrics.y * C;
+    }
+
     normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
 
     shadeable_intersection.materialId = material_id;
     shadeable_intersection.t = optixGetRayTmax();
+    shadeable_intersection.u = uv.x;
+    shadeable_intersection.v = uv.y;
 
     shadeable_intersection.surfaceNormal = normal;
 }

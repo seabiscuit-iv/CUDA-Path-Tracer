@@ -12,16 +12,25 @@
 #define BIN_COUNT 16
 
 
-void Mesh::make_mesh_host(const std::vector<glm::vec3>& v, const std::vector<int>& indices, const std::vector<glm::vec3>& normals, const std::vector<int>& normal_indices) {
+void Mesh::make_mesh_host(
+    const std::vector<glm::vec3>& v, 
+    const std::vector<int>& indices, 
+    const std::vector<glm::vec3>& normals, 
+    const std::vector<int>& normal_indices, 
+    const std::vector<glm::vec2>& uvs, 
+    const std::vector<int>& uv_indices
+) {
     num_verts = v.size();
     num_triangles = indices.size() / 3;
     num_normals = normals.size();
+    num_uvs = uvs.size();
 
     h_verts = v;
     h_triangles = std::vector<Triangle>();
 
     for(int i = 0; i < num_triangles; i++) {
         int nind[3];
+        int uvind[3];
         int inds[3] = { indices[3*i], indices[3*i + 1], indices[3*i + 2] };
         if (normal_indices.size() > 0) {
             nind[0] = normal_indices[3*i];
@@ -33,10 +42,21 @@ void Mesh::make_mesh_host(const std::vector<glm::vec3>& v, const std::vector<int
             nind[2] = -1;
         }
 
+        if (uv_indices.size() > 0) {
+            uvind[0] = uv_indices[3*i];
+            uvind[1] = uv_indices[3*i + 1];
+            uvind[2] = uv_indices[3*i + 2];
+        } else {
+            uvind[0] = -1;
+            uvind[1] = -1;
+            uvind[2] = -1;
+        }
+
         h_triangles.push_back (
             Triangle (
                 inds,
-                nind
+                nind,
+                uvind
             )
         );
     }
@@ -44,6 +64,11 @@ void Mesh::make_mesh_host(const std::vector<glm::vec3>& v, const std::vector<int
     if (normals.size() > 0 && normal_indices.size() > 0) {
         h_normals = normals;
         has_normal_buffers = true;
+    }
+
+    if (uvs.size() > 0 && uv_indices.size() > 0) {
+        h_uvs = uvs;
+        has_uvs = true;
     }
 
     h_valid = true;
@@ -61,6 +86,11 @@ void Mesh::make_mesh_device() {
         cudaMemcpy(d_normals, h_normals.data(), num_normals * sizeof(glm::vec3), cudaMemcpyHostToDevice);
     }
 
+    if (has_uvs) {
+        cudaMalloc((void**)&d_uvs, num_uvs * sizeof(glm::vec2));
+        cudaMemcpy(d_uvs, h_uvs.data(), num_uvs * sizeof(glm::vec2), cudaMemcpyHostToDevice);
+    }
+
     bvh.make_bvh(h_verts, h_triangles);
 
     // optix
@@ -73,6 +103,7 @@ void Mesh::make_mesh_device_copy(const Mesh& mesh) {
     d_verts = mesh.d_verts;
     d_triangles = mesh.d_triangles;
     d_normals = mesh.d_normals;
+    d_uvs = mesh.d_uvs;
     bvh = mesh.bvh;
     as_handle = mesh.as_handle;
     d_as_output_buffer = mesh.d_as_output_buffer;
@@ -86,6 +117,10 @@ void Mesh::delete_mesh_device() {
     
     if (has_normal_buffers) {
         cudaFree(d_normals);
+    }
+
+    if (has_uvs) {
+        cudaFree(d_uvs);
     }
 
     cudaFree((void*)d_as_output_buffer);

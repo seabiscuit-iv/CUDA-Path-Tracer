@@ -656,6 +656,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 {
     if (action == GLFW_PRESS)
     {
+        Camera& cam = renderState->camera;
         switch (key)
         {
             case GLFW_KEY_ESCAPE:
@@ -668,8 +669,6 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
             case GLFW_KEY_SPACE:
                 camchanged = true;
                 renderState = &scene->state;
-                Camera& cam = renderState->camera;
-                cam.lookAt = ogLookAt;
                 break;
         }
     }

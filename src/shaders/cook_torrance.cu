@@ -122,12 +122,12 @@ namespace CookTorrance {
         path.sample_dir = wi;
     }
 
-    __device__ void sampleCookTorrance(PathSegment &path, Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng) {
+    __device__ void sampleCookTorrance(PathSegment &path, Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng, glm::vec3 color) {
         thrust::uniform_real_distribution<float> u01(0, 1);
         float r = u01(rng);
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
-        glm::vec3 F0 = glm::mix(dielectricF0, material.color, material.metallic);
+        glm::vec3 F0 = glm::mix(dielectricF0, color, material.metallic);
         float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
 
         if (r <= probSpecular) {
@@ -154,12 +154,12 @@ namespace CookTorrance {
     }  
 
     
-    __device__ float PDF(const Material &material, glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness) {
+    __device__ float PDF(const Material &material, glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness, glm::vec3 color) {
         float pdfDiffuse  = max(0.0f, glm::dot(wi, n)) * INV_PI;
         float pdfSpecular = PDF_GGX(wo, wi, n, roughness);
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
-        glm::vec3 F0 = glm::mix(dielectricF0, material.color, material.metallic);
+        glm::vec3 F0 = glm::mix(dielectricF0, color, material.metallic);
         float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
 
         float pdf = (1.0f - probSpecular) * pdfDiffuse + probSpecular * pdfSpecular;
@@ -170,10 +170,10 @@ namespace CookTorrance {
     __device__ void shadePathCookTorrance(
         ShadeableIntersection &intersection,
         PathSegment &path,
-        const Material &material
+        const Material &material,
+        glm::vec3 albedo
     )
     {
-        glm::vec3 albedo = material.color;
         glm::vec3 wo = -path.ray.direction;
         glm::vec3 wi = path.sample_dir;
         glm::vec3 normal = intersection.surfaceNormal;
@@ -188,7 +188,7 @@ namespace CookTorrance {
         #endif // REMOVE_FIREFLIES
 
         float absdot = max(0.0f, glm::dot(wi, normal));
-        float pdf = PDF(material, wo, wi, normal, roughness);
+        float pdf = PDF(material, wo, wi, normal, roughness, albedo);
 
         // MICROFACET PDF CLAMP, THIS IS NECESSARY TO REMOVE FIREFLIES
         path.throughput *= brdf * absdot / glm::max(pdf, 0.025f);

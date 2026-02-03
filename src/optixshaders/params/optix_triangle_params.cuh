@@ -32,14 +32,18 @@ struct OptixPathSegment
 
 struct OptixShadeableIntersection
 {
-  float t;
-  float3 surfaceNormal;
-  int materialId;
+  float t;                  // 0
+  float3 surfaceNormal;     // 4 (CUDA float3 at offset 4 is fine here)
+  int materialId;           // 16
+  float _pad0;              // 20
+  float u;               // 24
+  float v;
 };
 
 struct OptixTriangle {
     unsigned int v_indices[3];
     unsigned int n_indices[3];
+    unsigned int uv_indices[3];
 };
 
 
@@ -54,6 +58,7 @@ struct Params
     float3** vertex_buffer_locations;
     OptixTriangle** triangle_buffer_locations;
     float3** normal_buffer_locations;
+    float2** uv_buffer_locations;
 };
 
 struct RayGenData

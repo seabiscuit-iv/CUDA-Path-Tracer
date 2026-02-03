@@ -25,11 +25,11 @@ public:
 
     void free();
 
-private:
-    TextureHandler() {}
-
     std::vector<TextureData> host_textures;
     TextureData* dev_textures;
+
+private:
+    TextureHandler() {}
 
     std::vector<std::vector<glm::vec4>> host_texture_data;
     std::vector<cudaArray_t> cuda_arrays;
