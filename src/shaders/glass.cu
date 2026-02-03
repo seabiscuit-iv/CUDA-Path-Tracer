@@ -66,23 +66,22 @@ namespace TransmissiveGlass
         return glm::vec3(r_parallel * r_parallel + r_perpendicular * r_perpendicular) / 2.0f;
     }
 
-    __device__ void sampleGlass(PathSegment &path, ShadeableIntersection &intersection, Material &material, thrust::default_random_engine &rng) {
+    __device__ void sampleGlass(PathSegment &path, Material &material, thrust::default_random_engine &rng, glm::vec3 normal) {
         glm::vec3 wo = -path.ray.direction;
-        glm::vec3 nor = intersection.surfaceNormal;
 
         thrust::uniform_real_distribution<float> u01(0, 1);
         float r = u01(rng);
 
-        float cos_theta_I = glm::dot(wo, nor);
+        float cos_theta_I = glm::dot(wo, normal);
         glm::vec3 F_vec = FresnelDielectricEval(cos_theta_I);
         float F = glm::clamp(F_vec.r, 0.0f, 1.0f);
 
         glm::vec3 wi = glm::vec3(0.0, 1.0, 0.0);
         if (r < F) {
-            wi = sampleSpecularRefl(intersection.surfaceNormal, wo);
+            wi = sampleSpecularRefl(normal, wo);
         }   
         else {
-            wi = sampleSpecularTrans(intersection.surfaceNormal, wo);
+            wi = sampleSpecularTrans(normal, wo);
         }
 
         // the NaN is somewhere here
@@ -91,8 +90,7 @@ namespace TransmissiveGlass
     }
 
     __device__ void shadePathGlass(
-        PathSegment &path, 
-        ShadeableIntersection &intersection, 
+        PathSegment &path,  
         const Material &material,
         glm::vec3 color
     ) {

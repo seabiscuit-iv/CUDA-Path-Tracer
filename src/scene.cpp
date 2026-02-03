@@ -336,6 +336,55 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
         newMaterial.roughness = mat.pbrMetallicRoughness.roughnessFactor;
 
         newMaterial.albedo_tex = mat.pbrMetallicRoughness.baseColorTexture.index;
+        if (mat.pbrMetallicRoughness.baseColorTexture.extensions.find("KHR_texture_transform") != mat.pbrMetallicRoughness.baseColorTexture.extensions.end()) {
+            auto& ext = mat.pbrMetallicRoughness.baseColorTexture.extensions.at("KHR_texture_transform");
+            
+            if (ext.Has("offset")) {
+                const auto& o = ext.Get("offset").Get<tinygltf::Value::Array>();
+                newMaterial.albedo_tex_transform.offset = glm::vec2{
+                    float(o[0].Get<double>()),
+                    float(o[1].Get<double>())
+                };
+            }
+
+            if (ext.Has("scale")) {
+                const auto& s = ext.Get("scale").Get<tinygltf::Value::Array>();
+                newMaterial.albedo_tex_transform.scale = glm::vec2{
+                    float(s[0].Get<double>()),
+                    float(s[1].Get<double>())
+                };
+            }
+
+            if (ext.Has("rotation")) {
+                newMaterial.albedo_tex_transform.rotation = float(ext.Get("rotation").Get<double>());
+            }
+        }
+
+        newMaterial.normal_tex = mat.normalTexture.index;
+        if (mat.normalTexture.extensions.find("KHR_texture_transform") != mat.normalTexture.extensions.end()) {
+            auto& ext = mat.normalTexture.extensions.at("KHR_texture_transform");
+            
+            if (ext.Has("offset")) {
+                const auto& o = ext.Get("offset").Get<tinygltf::Value::Array>();
+                newMaterial.normal_tex_transform.offset = glm::vec2{
+                    float(o[0].Get<double>()),
+                    float(o[1].Get<double>())
+                };
+            }
+
+            if (ext.Has("scale")) {
+                const auto& s = ext.Get("scale").Get<tinygltf::Value::Array>();
+                newMaterial.normal_tex_transform.scale = glm::vec2{
+                    float(s[0].Get<double>()),
+                    float(s[1].Get<double>())
+                };
+            }
+
+            if (ext.Has("rotation")) {
+                newMaterial.normal_tex_transform.rotation = float(ext.Get("rotation").Get<double>());
+            }
+        }
+
 
         float emissive_strength = 1.0f;
         if (mat.extensions.find("KHR_materials_emissive_strength") != mat.extensions.end()) {

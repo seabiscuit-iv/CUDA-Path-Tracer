@@ -316,7 +316,12 @@ void RenderImGui()
     #endif
 
     changed |= ImGui::Checkbox("Material Debug Mode", &PathTracerOptions::Get()->material_debug_mode);
-    
+
+    const char* color_modes[3] = {"Reinhard", "AgX", "ACES"};
+    changed |= ImGui::Combo("Tone Mapper", &PathTracerOptions::Get()->color_mode, color_modes, IM_ARRAYSIZE(color_modes));
+
+    changed |= ImGui::SliderFloat("Environment Map Intensity", &PathTracerOptions::Get()->envmap_intensity, 0.0f, 25.0f);
+
     ImGui::End();
 
     if (changed) {

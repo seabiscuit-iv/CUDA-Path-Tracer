@@ -73,6 +73,13 @@ struct Geom
     Mesh mesh;
 };
 
+
+struct TextureTransform {
+    glm::vec2 offset{0.0f, 0.0f};
+    glm::vec2 scale{1.0f, 1.0f};
+    float rotation = 0.0f;
+};
+
 struct Material
 {
     MaterialType material_type;
@@ -90,6 +97,11 @@ struct Material
     float roughness = 0.0f;
     float metallic = 0.0f;
     float alpha = 1.0f;
+    int normal_tex;
+
+    TextureTransform albedo_tex_transform;
+
+    TextureTransform normal_tex_transform;
 };
 
 struct Camera
@@ -130,6 +142,7 @@ struct ShadeableIntersection
 {
   float t;                  // 0
   glm::vec3 surfaceNormal;  // 4
+  glm::vec3 surfaceTangent;  // 4
   int materialId;           // 16
   float _pad0;              // 20 (This fixes your Offset 3 mismatch)
   glm::vec2 uvs;            // 24

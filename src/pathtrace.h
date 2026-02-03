@@ -15,6 +15,8 @@ void pathtrace(uchar4 *pbo, int frame, int iteration);
 struct PathTracerOptions {
     bool debug_bvh = false;
     bool material_debug_mode = false;
+    int color_mode = 2;
+    float envmap_intensity = 1.0f;
 
     static PathTracerOptions* Get() {
         static PathTracerOptions instance;

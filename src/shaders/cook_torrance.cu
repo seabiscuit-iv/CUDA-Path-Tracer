@@ -98,7 +98,7 @@ namespace CookTorrance {
         float x1 = u01(rng);
         float x2 = u01(rng);
 
-        roughness = glm::clamp(roughness, 0.05f, 1.0f);
+        roughness = glm::clamp(roughness, 0.01f, 1.0f);
         float alpha = roughness * roughness;
 
         float under_atan = (alpha * glm::sqrt(x1)) / glm::sqrt(1.0f - x1); 
@@ -115,9 +115,6 @@ namespace CookTorrance {
 
         glm::vec3 wi = glm::reflect( -wo, h_world ); //wi and wo both point out of the intersection
 
-        if (glm::dot(wi, n) < 0.0f) {
-            wi = -wi;
-        }
 
         path.sample_dir = wi;
     }
@@ -128,7 +125,7 @@ namespace CookTorrance {
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
         glm::vec3 F0 = glm::mix(dielectricF0, color, material.metallic);
-        float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
+        float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.01f, 0.99f);
 
         if (r <= probSpecular) {
             sampleGGX(path, idx, iter, depth, wo, n, roughness, rng);
@@ -160,7 +157,7 @@ namespace CookTorrance {
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
         glm::vec3 F0 = glm::mix(dielectricF0, color, material.metallic);
-        float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.05f, 0.95f);
+        float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.01f, 0.99f);
 
         float pdf = (1.0f - probSpecular) * pdfDiffuse + probSpecular * pdfSpecular;
         return pdf;
@@ -168,15 +165,14 @@ namespace CookTorrance {
 
     
     __device__ void shadePathCookTorrance(
-        ShadeableIntersection &intersection,
         PathSegment &path,
         const Material &material,
-        glm::vec3 albedo
+        glm::vec3 albedo,
+        glm::vec3 normal
     )
     {
         glm::vec3 wo = -path.ray.direction;
         glm::vec3 wi = path.sample_dir;
-        glm::vec3 normal = intersection.surfaceNormal;
 
         float roughness = material.roughness;
         float metallic = material.metallic;
@@ -191,7 +187,7 @@ namespace CookTorrance {
         float pdf = PDF(material, wo, wi, normal, roughness, albedo);
 
         // MICROFACET PDF CLAMP, THIS IS NECESSARY TO REMOVE FIREFLIES
-        path.throughput *= brdf * absdot / glm::max(pdf, 0.025f);
+        path.throughput *= brdf * absdot / glm::max(pdf, 0.001f);
     }   
 
 }

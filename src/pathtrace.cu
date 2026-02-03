@@ -35,6 +35,8 @@
 
 #define ACES 1
 
+__constant__ PathTracerOptions DEV_OPTIONS;
+
 __device__ glm::vec3 ACESFilm(glm::vec3 x) {
     const float a = 2.51f;
     const float b = 0.03f;
@@ -42,6 +44,32 @@ __device__ glm::vec3 ACESFilm(glm::vec3 x) {
     const float d = 0.59f;
     const float e = 0.14f;
     return glm::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
+}
+
+__device__ glm::vec3 AgX(glm::vec3 val) {
+    // 1. Logarithmic encoding
+    // Map a wide dynamic range (-10 to +6 stops) into 0..1
+    val = glm::max(val, 1e-6f); // Safety for log
+    
+    // Manual log2 and encoding
+    val.r = (log2f(val.r) + 10.0f) / 16.0f;
+    val.g = (log2f(val.g) + 10.0f) / 16.0f;
+    val.b = (log2f(val.b) + 10.0f) / 16.0f;
+    val = glm::clamp(val, 0.0f, 1.0f);
+
+    // 2. AgX Sigmoid Curve (The "Look")
+    glm::vec3 x2 = val * val;
+    glm::vec3 x4 = x2 * x2;
+    val = 15.5f * x4 * val - 40.14f * x4 + 31.96f * x2 * val - 6.86f * x2 + 0.429f * val + 0.0322f;
+
+    // 3. Manual Matrix Multiply (AgX to Linear sRGB)
+    // This avoids any GLM column/row major confusion
+    glm::vec3 result;
+    result.r = val.r * 1.1968790f - val.g * 0.0980208f - val.b * 0.0990297f;
+    result.g = -val.r * 0.0528968f + val.g * 1.1519031f - val.b * 0.0989611f;
+    result.b = -val.r * 0.0529716f - val.g * 0.0980434f + val.b * 1.1510736f;
+
+    return glm::clamp(result, 0.0f, 1.0f);
 }
 
 //Kernel that writes the image to the OpenGL PBO directly.
@@ -59,11 +87,15 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, g
 
         pix = pix * invIter;
         
-        // reinhard op
-        // pix = pix / (pix + glm::vec3(1.0f));
-        #if ACES
+        if (DEV_OPTIONS.color_mode == 0) {
+            pix = pix / (pix + glm::vec3(1.0f));
+        }
+        else if (DEV_OPTIONS.color_mode == 1) {
+            pix = AgX(pix);
+        }
+        else {
             pix = ACESFilm(pix);
-        #endif
+        }
 
         //gamma correction
         pix = glm::pow(pix, glm::vec3(0.45f));
@@ -106,8 +138,6 @@ static int* dev_path_scatter_buf;
 
 static cudaArray_t dev_exr_array;
 static cudaTextureObject_t exr_texture = 0;
-
-__constant__ PathTracerOptions DEV_OPTIONS;
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
@@ -375,33 +405,84 @@ __global__ void shadePath(
         glm::vec3 materialColor = material.color;
 
         if(material.albedo_tex >= 0) {
-            float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, intersection.uvs.x, intersection.uvs.y);
-            materialColor = glm::vec3(tex.x, tex.y, tex.z);
+            glm::vec2 uv = intersection.uvs;
+
+            uv *= material.albedo_tex_transform.scale;
+            
+            if(material.albedo_tex_transform.rotation) {
+                float c = cosf(material.albedo_tex_transform.rotation);
+                float s = sinf(material.albedo_tex_transform.rotation);
+
+                uv = glm::vec2 (
+                    c * uv.x - s * uv.y,
+                    s * uv.x + c * uv.y
+                );
+            }
+
+            uv += material.albedo_tex_transform.offset;
+
+            float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, uv.x, uv.y);
+            materialColor = glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
+        }
+
+        glm::vec3 normal = intersection.surfaceNormal;
+        glm::vec3 normal_map;
+        // if (material.normal_tex >= 0 && !DEV_OPTIONS.material_debug_mode) {
+        if (material.normal_tex >= 0) {
+            glm::vec2 uv = intersection.uvs;
+
+            uv *= material.normal_tex_transform.scale;
+            
+            if(material.normal_tex_transform.rotation) {
+                float c = cosf(material.normal_tex_transform.rotation);
+                float s = sinf(material.normal_tex_transform.rotation);
+
+                uv = glm::vec2 (
+                    c * uv.x - s * uv.y,
+                    s * uv.x + c * uv.y
+                );
+            }
+
+            uv += material.normal_tex_transform.offset;
+
+
+            float4 tex = tex2D<float4>(textures[material.normal_tex].tex, uv.x, uv.y);
+            glm::vec3 local_normal = glm::vec3(tex.x, tex.y, tex.z);
+            normal_map = local_normal;
+            local_normal.x = local_normal.r * 2.0f - 1.0f;
+            local_normal.y = local_normal.g * 2.0f - 1.0f;
+            local_normal.z = local_normal.b * 2.0f - 1.0f;
+
+            glm::vec3 bitangent = glm::normalize(glm::cross(intersection.surfaceNormal, intersection.surfaceTangent));
+
+            glm::mat3 TBN = glm::mat3(intersection.surfaceTangent, bitangent, intersection.surfaceNormal);
+
+            normal = glm::normalize(TBN * local_normal);
         }
 
         if (DEV_OPTIONS.material_debug_mode) {
-            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
+            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
 
             if (material.material_type == MaterialType::Emissive) {
                 path.color += path.throughput * material.emittance * material.color;
                 path.kill = true;
             }
             else {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material, materialColor);
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
             }
         }
         else {
             if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
-                Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, intersection, rng);
+                Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
             } 
             else if (material.material_type == MaterialType::Specular) {
-                PerfectSpecular::sampleMirror(path, intersection);
+                PerfectSpecular::sampleMirror(path, normal);
             }
             else if (material.material_type == MaterialType::Microfacet) {
                 CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng, materialColor);
             }
             else if (material.material_type == MaterialType::Glass) {
-                TransmissiveGlass::sampleGlass(path, intersection, material, rng);
+                TransmissiveGlass::sampleGlass(path, material, rng, normal);
             }
 
             if (material.material_type == MaterialType::Emissive) {
@@ -409,16 +490,16 @@ __global__ void shadePath(
                 path.kill = true;
             } 
             else if (material.material_type == MaterialType::Diffuse) {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, intersection, path, material, materialColor);
+                Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
             } 
             else if (material.material_type == MaterialType::Specular) {
                 PerfectSpecular::shadePathSpecular(path, material, materialColor);
             }
             else if (material.material_type == MaterialType::Microfacet) {
-                CookTorrance::shadePathCookTorrance(intersection, path, material, materialColor);
+                CookTorrance::shadePathCookTorrance(path, material, materialColor, normal);
             }
             else if (material.material_type == MaterialType::Glass) {
-                TransmissiveGlass::shadePathGlass(path, intersection, material, materialColor);
+                TransmissiveGlass::shadePathGlass(path, material, materialColor);
             }
         }
     }   
@@ -433,7 +514,7 @@ __global__ void shadePath(
 
         float4 env = tex2D<float4>(exr, u, v);
 
-        path.color += path.throughput * glm::vec3(env.x, env.y, env.z);
+        path.color += path.throughput * glm::vec3(env.x, env.y, env.z) * DEV_OPTIONS.envmap_intensity;
     }
 
     if (intersection.t == -1.0f) {
@@ -465,7 +546,14 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
     {
         PathSegment iterationPath = iterationPaths[index];
         glm::vec3 color = iterationPath.color;
-        image[iterationPath.pixelIndex] += iterationPath.color;
+
+        float maxIntensity = 10.0f;
+        float luminance = glm::dot(color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+        if (luminance > maxIntensity) {
+            color *= (maxIntensity / luminance);
+        }
+
+        image[iterationPath.pixelIndex] += color;
     }
 }
 
@@ -645,8 +733,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // fmt::println("PATHTRACE: {} vs {}", sizeof(ShadeableIntersection), sizeof(OptixShadeableIntersection));
     // fmt::println("Offset 0: {} vs {}", offsetof(ShadeableIntersection, t), offsetof(OptixShadeableIntersection, t));
     // fmt::println("Offset 1: {} vs {}", offsetof(ShadeableIntersection, surfaceNormal), offsetof(OptixShadeableIntersection, surfaceNormal));
-    // fmt::println("Offset 2: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
-    // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
+    // fmt::println("Offset 2: {} vs {}", offsetof(ShadeableIntersection, surfaceTangent), offsetof(OptixShadeableIntersection, surfaceTangent));
+    // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
+    // fmt::println("Offset 4: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
 
     const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 2 : hst_scene->state.traceDepth;
     const Camera& cam = hst_scene->state.camera;

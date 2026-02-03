@@ -34,10 +34,11 @@ struct OptixShadeableIntersection
 {
   float t;                  // 0
   float3 surfaceNormal;     // 4 (CUDA float3 at offset 4 is fine here)
+  float3 surfaceTangent;
   int materialId;           // 16
   float _pad0;              // 20
   float u;               // 24
-  float v;
+  float v;                  
 };
 
 struct OptixTriangle {

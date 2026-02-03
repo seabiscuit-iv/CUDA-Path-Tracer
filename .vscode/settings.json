@@ -6,7 +6,7 @@
         "args": [
             "scenes\\locked_in_car.glb",
             "--envmap",
-            "scenes\\exr\\brown_photostudio_01_4k.exr"
+            "C:\\Users\\saahi\\Documents\\Blender Assets\\HDRIs\\goegap_road_4k.exr"
         ]
     },
     "files.associations": {

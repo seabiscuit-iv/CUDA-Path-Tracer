@@ -23,9 +23,9 @@ namespace PerfectSpecular {
 
 
 
-    __device__ void sampleMirror(PathSegment &path, ShadeableIntersection &intersection) {
+    __device__ void sampleMirror(PathSegment &path, glm::vec3 normal) {
         glm::vec3 wo = -path.ray.direction;
-        glm::vec3 wi = glm::reflect(-wo, intersection.surfaceNormal);
+        glm::vec3 wi = glm::reflect(-wo, normal);
 
         path.sample_dir = wi;
     }

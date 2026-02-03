@@ -1,8 +1,3 @@
-/*
- * SPDX-FileCopyrightText: Copyright (c) 2019 - 2024  NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause
- */
-
 #include <optix.h>
 
 #include <sutil/vec_math.h>
@@ -106,18 +101,39 @@ extern "C" __global__ void __closesthit__ch()
         normal = normalize(bA * A + barycentrics.x * B + barycentrics.y * C);
     }
 
+    float3 tangent = make_float3(1.0, 0.0, 0.0);
+
     float2 uv;
     if (uv_buffer != nullptr) {
-        float2 A = uv_buffer[triangle.uv_indices[0]];
-        float2 B = uv_buffer[triangle.uv_indices[1]];
-        float2 C = uv_buffer[triangle.uv_indices[2]];
+        float2 A_uv = uv_buffer[triangle.uv_indices[0]];
+        float2 B_uv = uv_buffer[triangle.uv_indices[1]];
+        float2 C_uv = uv_buffer[triangle.uv_indices[2]];
 
         float bA = 1.0f - barycentrics.x - barycentrics.y;
 
-        uv = bA * A + barycentrics.x * B + barycentrics.y * C;
+        uv = bA * A_uv + barycentrics.x * B_uv + barycentrics.y * C_uv;
+
+        // tangent calculation
+        float2 duv1 = B_uv - A_uv;
+        float2 duv2 = C_uv - A_uv;
+
+        float det = (duv1.x * duv2.y - duv2.x * duv1.y);
+
+        float f = (fabsf(det) < 1e-10f) ? 0.0f : 1.0f / det;
+
+        if (f == 0.0f) {
+            tangent = make_float3(1.0f, 0.0f, 0.0f); 
+        }
+        else {
+            tangent.x = f * (duv2.y * edge1.x - duv1.y * edge2.x);
+            tangent.y = f * (duv2.y * edge1.y - duv1.y * edge2.y);
+            tangent.z = f * (duv2.y * edge1.z - duv1.y * edge2.z);
+        }
     }
 
     normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
+    tangent = normalize(optixTransformVectorFromObjectToWorldSpace(tangent));
+    tangent = normalize(tangent - dot(tangent, normal) * normal);
 
     shadeable_intersection.materialId = material_id;
     shadeable_intersection.t = optixGetRayTmax();
@@ -125,4 +141,5 @@ extern "C" __global__ void __closesthit__ch()
     shadeable_intersection.v = uv.y;
 
     shadeable_intersection.surfaceNormal = normal;
+    shadeable_intersection.surfaceTangent = tangent;
 }

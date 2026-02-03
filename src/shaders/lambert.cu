@@ -29,25 +29,25 @@ namespace Lambert {
         int iter,
         int num_paths,
         int depth,
-        ShadeableIntersection &intersection,
         PathSegment &path,
         const Material &material,
-        glm::vec3 materialColor
+        glm::vec3 materialColor,
+        glm::vec3 normal
     )
     {
         glm::vec3 brdf = BRDF(materialColor);
-        float absdot = max(0.0f, glm::dot(path.sample_dir, intersection.surfaceNormal));
-        float pdf = max(1e-6f, PDF(path.sample_dir, intersection.surfaceNormal));
+        float absdot = max(0.0f, glm::dot(path.sample_dir, normal));
+        float pdf = max(1e-6f, PDF(path.sample_dir, normal));
         path.throughput *= brdf * absdot / pdf;
     }   
 
 
 
-__device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, ShadeableIntersection &intersection, thrust::default_random_engine &rng) {
+__device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, thrust::default_random_engine &rng, glm::vec3 normal) {
         glm::vec3 wo = -path.ray.direction;
         glm::vec3 wi;
 
-        wi = calculateRandomDirectionInHemisphere(intersection.surfaceNormal, rng);
+        wi = calculateRandomDirectionInHemisphere(normal, rng);
 
         path.sample_dir = wi;
     }
