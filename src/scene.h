@@ -12,6 +12,7 @@ class Scene
 private:
     void loadFromJSON(const std::string& jsonName, std::string env_map_path);
     void loadFromGLTF(const std::string& gltfName, std::string env_map_path);
+    void precompute_emissive_mesh_area();
 public:
     Scene(std::string filename, const char* env_map);
 
@@ -26,6 +27,11 @@ public:
     OptixPipeline optix_pipeline;
     OptixTraversableHandle ias_handle;
     OptixShaderBindingTable optix_sbt;
+
+    // funny light sampling stuff
+    float total_emissive_mesh_area;
+    std::vector<int> emissive_geoms;
+    std::vector<float> emissive_geom_area_prefix;
 };
 
 

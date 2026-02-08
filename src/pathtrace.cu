@@ -139,6 +139,10 @@ static int* dev_path_scatter_buf;
 static cudaArray_t dev_exr_array;
 static cudaTextureObject_t exr_texture = 0;
 
+// emissive area sampling stuff
+static int* dev_emissive_geoms;
+static float* dev_emissive_geom_area_prefix;
+
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
     guiData = imGuiData;
@@ -227,6 +231,12 @@ void pathtraceInit(Scene* scene)
 
         cudaCreateTextureObject(&exr_texture, &res_desc, &tex_desc, nullptr);
     }
+
+    cudaMalloc( &dev_emissive_geoms, scene->emissive_geoms.size() * sizeof(int));
+    cudaMemcpy( dev_emissive_geoms, scene->emissive_geoms.data(), scene->emissive_geoms.size() * sizeof(int), cudaMemcpyHostToDevice );
+
+    cudaMalloc( &dev_emissive_geom_area_prefix, scene->emissive_geom_area_prefix.size() * sizeof(float));
+    cudaMemcpy( dev_emissive_geom_area_prefix, scene->emissive_geom_area_prefix.data(), scene->emissive_geom_area_prefix.size() * sizeof(float), cudaMemcpyHostToDevice );
 
     checkCUDAError("pathtraceInit");
 }
@@ -375,6 +385,20 @@ __global__ void computeIntersections(
     }
 }
 
+__device__ int select_from_cdf(float* cdf, int size, float xi) {
+    int low = 0;
+    int high = size - 1;
+    while (low < high) {
+        int mid = low + (high - low) / 2;
+        if (cdf[mid] < xi) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    return low;
+}
+
 __global__ void shadePath(
     int iter,
     int num_paths,
@@ -384,7 +408,12 @@ __global__ void shadePath(
     int depth,
     bool has_exr,
     cudaTextureObject_t exr,
-    TextureData* textures
+    TextureData* textures,
+    int num_emissive_geoms,
+    int* emissive_geoms,
+    float* emissive_geoms_area_prefix,
+    const Geom* __restrict__ geoms,
+    float total_emissive_mesh_area
 )
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -427,7 +456,6 @@ __global__ void shadePath(
 
         glm::vec3 normal = intersection.surfaceNormal;
         glm::vec3 normal_map;
-        // if (material.normal_tex >= 0 && !DEV_OPTIONS.material_debug_mode) {
         if (material.normal_tex >= 0) {
             glm::vec2 uv = intersection.uvs;
 
@@ -461,14 +489,66 @@ __global__ void shadePath(
         }
 
         if (DEV_OPTIONS.material_debug_mode) {
-            Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
+            // Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
+            // path.sample_dir = glm::vec3(0.0, 1.0, 0.0);
+            thrust::uniform_real_distribution<float> u01(0, 1);
+            float rand = u01(rng);
+
+            // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
+            int select = select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
+            const Geom& emissive_geom = geoms[emissive_geoms[select]];
+
+            float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
+            float upper = emissive_geoms_area_prefix[select];
+            float denominator = upper - lower;
+            float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
+            tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
+
+            int tri_select = select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
+
+            // sample the triangle at tri_select
+            Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
+            glm::vec3 v0 = emissive_geom.mesh.d_verts[tri.v_indices[0]];
+            glm::vec3 v1 = emissive_geom.mesh.d_verts[tri.v_indices[1]];
+            glm::vec3 v2 = emissive_geom.mesh.d_verts[tri.v_indices[2]];
+
+            float r1 = sqrt(u01(rng));
+            float r2 = u01(rng);
+            float u = 1.0f - r1;
+            float v = r2 * r1;
+
+            glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
+            glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
+
+            glm::vec3 intersect_pos = intersection.t * path.ray.direction + path.ray.origin;
+
+            path.sample_dir = glm::normalize(world_light_pos - intersect_pos);
+
+            glm::vec3 diff = world_light_pos - intersect_pos;
+            float dist_sq = glm::dot(diff, diff);
+            float dist = glm::length(world_light_pos - intersect_pos);
+
+            glm::vec3 local_normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+            glm::vec3 light_normal = glm::normalize(glm::vec3(emissive_geom.invTranspose * glm::vec4(local_normal, 0.0f)));
+
+            float cosThetaSurface = glm::dot(normal, path.sample_dir);
+            float cosThetaLight = glm::dot(light_normal, -path.sample_dir);
+
+            float light_atten = 0.0f;
+            if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
+                float pdf_area = 1.0f / total_emissive_mesh_area;
+                float pdf_solid_angle = pdf_area * (dist_sq / cosThetaLight);
+                light_atten = cosThetaSurface / pdf_solid_angle;
+            }
 
             if (material.material_type == MaterialType::Emissive) {
                 path.color += path.throughput * material.emittance * materialColor;
                 path.kill = true;
             }
             else {
-            Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
+                glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
+                // float pdf = Lambert::PDF(path.sample_dir, normal);
+                path.throughput *= lambert * light_atten;
             }
         }
         else {
@@ -490,7 +570,9 @@ __global__ void shadePath(
                 path.kill = true;
             } 
             else if (material.material_type == MaterialType::Diffuse) {
-                Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
+                glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
+                float pdf = Lambert::PDF(path.sample_dir, normal);
+                path.throughput *= lambert / pdf;
             } 
             else if (material.material_type == MaterialType::Specular) {
                 PerfectSpecular::shadePathSpecular(path, material, materialColor);
@@ -547,11 +629,12 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
         PathSegment iterationPath = iterationPaths[index];
         glm::vec3 color = iterationPath.color;
 
-        float maxIntensity = 1000.0f;
-        float luminance = glm::dot(color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
-        if (luminance > maxIntensity) {
-            color *= (maxIntensity / luminance);
-        }
+        // this should not exist
+        // float maxIntensity = 1000.0f;
+        // float luminance = glm::dot(color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+        // if (luminance > maxIntensity) {
+        //     color *= (maxIntensity / luminance);
+        // }
 
         image[iterationPath.pixelIndex] += color;
     }
@@ -902,7 +985,12 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 depth,
                 !hst_scene->exr_data.empty(),
                 exr_texture,
-                TextureHandler::get().dev_textures
+                TextureHandler::get().dev_textures,
+                hst_scene->emissive_geoms.size(),
+                dev_emissive_geoms,
+                dev_emissive_geom_area_prefix,
+                dev_geoms,
+                hst_scene->total_emissive_mesh_area
             );
 
             cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));

@@ -91,6 +91,18 @@ void Mesh::make_mesh_device() {
         cudaMemcpy(d_uvs, h_uvs.data(), num_uvs * sizeof(glm::vec2), cudaMemcpyHostToDevice);
     }
 
+    if (has_triangle_area_percentage_prefix) {
+        float sum = h_triangle_area_percentage_prefix[h_triangle_area_percentage_prefix.size() - 1];
+        fmt::println("Mesh area sum: {}", sum);
+
+        cudaMalloc((void**)&d_triangle_area_percentage_prefix, num_triangles * sizeof(float));
+        cudaMemcpy(d_triangle_area_percentage_prefix, h_triangle_area_percentage_prefix.data(), num_triangles * sizeof(float), cudaMemcpyHostToDevice);
+    }
+    else {
+        fmt::println("ERROR: NO TRIANGLE AREA PERCENTAGE PREFIX GENERATED");
+        exit(1);
+    }
+
     bvh.make_bvh(h_verts, h_triangles);
 
     // optix

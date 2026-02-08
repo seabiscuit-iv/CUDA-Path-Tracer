@@ -21,10 +21,10 @@ namespace Lambert {
 
     __device__ float PDF(glm::vec3 sample_dir, glm::vec3 surface_normal) {
         float cosTheta = max(0.0f, glm::dot(sample_dir, surface_normal));
-        return cosTheta * INV_PI;
+        return max(1e-6f, cosTheta * INV_PI);
     }
     
-    __device__ void shadePathLambert(
+    __device__ glm::vec3 shadePathLambert(
         int idx,
         int iter,
         int num_paths,
@@ -37,13 +37,12 @@ namespace Lambert {
     {
         glm::vec3 brdf = BRDF(materialColor);
         float absdot = max(0.0f, glm::dot(path.sample_dir, normal));
-        float pdf = max(1e-6f, PDF(path.sample_dir, normal));
-        path.throughput *= brdf * absdot / pdf;
+        return brdf * absdot;
     }   
 
 
 
-__device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, thrust::default_random_engine &rng, glm::vec3 normal) {
+    __device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, thrust::default_random_engine &rng, glm::vec3 normal) {
         glm::vec3 wo = -path.ray.direction;
         glm::vec3 wi;
 

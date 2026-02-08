@@ -259,6 +259,8 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
             free(exr);
         }
     }
+
+    precompute_emissive_mesh_area();
 }
 
 
@@ -693,4 +695,59 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
             free(exr);
         }
     }
+
+    precompute_emissive_mesh_area();
+}
+
+
+void Scene::precompute_emissive_mesh_area() {
+    fmt::println("Beginning Mesh Area Precommpute");
+    float emissive_area = 0.0f;
+    int i = 0;
+
+    emissive_geoms.clear();
+    emissive_geom_area_prefix.clear();
+
+    for (auto& geom : geoms) {
+        float cumulative_geom_area = 0.0f;
+
+        geom.mesh.h_triangle_area_percentage_prefix.clear();
+        
+        for(Triangle& tri : geom.mesh.h_triangles) {
+            glm::vec3 A = geom.mesh.h_verts[tri.v_indices[0]];
+            glm::vec3 B = geom.mesh.h_verts[tri.v_indices[1]];
+            glm::vec3 C = geom.mesh.h_verts[tri.v_indices[2]];
+
+            A = glm::vec3(geom.transform * glm::vec4(A, 1.0f));
+            B = glm::vec3(geom.transform * glm::vec4(B, 1.0f));
+            C = glm::vec3(geom.transform * glm::vec4(C, 1.0f));
+
+            glm::vec3 u = B - A;
+            glm::vec3 v = C - A;
+
+            cumulative_geom_area += 0.5f * glm::length(glm::cross(u, v));
+            geom.mesh.h_triangle_area_percentage_prefix.push_back(cumulative_geom_area);
+        }
+
+        for (int k = 0; k < geom.mesh.h_triangle_area_percentage_prefix.size(); k++) {
+            geom.mesh.h_triangle_area_percentage_prefix[k] /= cumulative_geom_area;
+        }
+
+        if (materials[geom.materialid].material_type == MaterialType::Emissive) {
+            emissive_area += cumulative_geom_area;
+            emissive_geoms.push_back(i);
+            emissive_geom_area_prefix.push_back(emissive_area);
+        }
+
+        geom.mesh.has_triangle_area_percentage_prefix = true;
+        i++;
+    }
+
+    for (int i = 0; i < emissive_geom_area_prefix.size(); i++) {
+        emissive_geom_area_prefix[i] /= emissive_area;
+    }
+
+    total_emissive_mesh_area = emissive_area;
+
+    fmt::println("End Mesh Area Precommpute");
 }

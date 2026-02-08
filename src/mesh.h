@@ -111,6 +111,7 @@ struct Mesh {
     bool d_valid = false;
     bool has_normal_buffers = false;
     bool has_uvs = false;
+    bool has_triangle_area_percentage_prefix = false;
 
     std::vector<glm::vec3> h_verts;
 
@@ -119,6 +120,8 @@ struct Mesh {
     std::vector<glm::vec2> h_uvs;
     
     std::vector<Triangle> h_triangles;
+
+    std::vector<float> h_triangle_area_percentage_prefix;
 
     int num_verts = 0;
     int num_triangles = 0;
@@ -129,6 +132,7 @@ struct Mesh {
     Triangle* d_triangles = nullptr;
     glm::vec3* d_normals = nullptr;
     glm::vec2* d_uvs = nullptr;
+    float* d_triangle_area_percentage_prefix = nullptr;
 
     BVH bvh;
 

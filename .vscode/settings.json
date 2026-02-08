@@ -4,7 +4,7 @@
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
         "args": [
-            "scenes\\tokyo.glb",
+            "scenes\\all_cars.glb",
         ]
     },
     "files.associations": {
