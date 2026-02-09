@@ -36,6 +36,11 @@ void init_optix() {
         optx_options.logCallbackLevel = 4;
         optx_options.validationMode = OPTIX_DEBUG_MODE ? OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL : OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF;
         CUcontext cu_ctx = 0;
+        cuCtxGetCurrent(&cu_ctx);
+        if (cu_ctx == nullptr) {
+            printf("Error: No active CUDA context found!\n");
+        }
+        printf("FUNCTION: %p\n", OPTIX_FUNCTION_TABLE_SYMBOL.optixDeviceContextCreate);
         OPTIX_CHECK( optixDeviceContextCreate( cu_ctx, &optx_options, &optix ) );
     } 
     catch (const std::exception& e) {

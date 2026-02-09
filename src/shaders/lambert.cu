@@ -1,17 +1,4 @@
-#ifndef LAMBERT
-#define LAMBERT
-
-#include "common.cu"
-#include <cmath>
-
-#include "sceneStructs.h"
-#include "interactions.h"
-
-#include <thrust/random.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
-
-#define INV_PI 0.3183098f
+#include "shaders/lambert.h"
 
 namespace Lambert {
 
@@ -51,5 +38,3 @@ namespace Lambert {
         path.sample_dir = wi;
     }
 }
-
-#endif // LAMBERT

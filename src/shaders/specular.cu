@@ -1,15 +1,4 @@
-#ifndef SPECULAR
-#define SPECULAR
-
-#include "common.cu"
-#include <cmath>
-
-#include "sceneStructs.h"
-#include "interactions.h"
-
-#include <thrust/random.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
+#include "shaders/specular.h"
 
 namespace PerfectSpecular {
     __device__ void shadePathSpecular(
@@ -30,5 +19,3 @@ namespace PerfectSpecular {
         path.sample_dir = wi;
     }
 }
-
-#endif // SPECULAR

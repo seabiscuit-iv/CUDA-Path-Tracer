@@ -1,17 +1,4 @@
-#ifndef GLASS_MATERIAL
-#define GLASS_MATERIAL
-
-#include "common.cu"
-#include <cmath>
-
-#include "sceneStructs.h"
-#include "interactions.h"
-
-#include <thrust/random.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
-
-#define INV_PI 0.3183098f
+#include "shaders/glass.h"
 
 namespace TransmissiveGlass
 {
@@ -97,5 +84,3 @@ namespace TransmissiveGlass
         path.throughput *= glm::mix(glm::vec3(1.0), color, material.alpha);
     }
 }
-
-#endif // GLASS_MATERIAL

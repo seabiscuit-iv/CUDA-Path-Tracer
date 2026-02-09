@@ -7,8 +7,8 @@
 #include <optix.h>
 
 
-class Ray;
-class Triangle;
+struct Ray;
+struct Triangle;
 
 #define EPS 0.01f
 

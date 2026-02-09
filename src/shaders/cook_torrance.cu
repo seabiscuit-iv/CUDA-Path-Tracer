@@ -1,22 +1,4 @@
-#ifndef COOK_TORRANCE
-#define COOK_TORRANCE
-
-#include "common.cu"
-#include <cmath>
-
-#include "sceneStructs.h"
-#include "interactions.h"
-
-#include <thrust/random.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
-
-#define INV_PI 0.3183098f
-
-#define CLAMP_POS(x) glm::max(x, 0.0f)
-
-// This is a workaround, and is not physically accurate. This should be replaced with direct light sampling and MIS
-#define MICROFACET_REMOVE_FIREFLIES 0
+#include "shaders/cook_torrance.h"
 
 namespace CookTorrance {
 
@@ -191,5 +173,3 @@ namespace CookTorrance {
     }   
 
 }
-
-#endif // COOK_TORRANCE

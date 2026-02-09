@@ -13,6 +13,7 @@
 #include "sceneStructs.h"
 #include "scene.h"
 #include "glm/glm.hpp"
+#include "glm/common.hpp"
 #include "glm/gtx/norm.hpp"
 #include "utilities.h"
 #include "intersections.h"
@@ -22,14 +23,14 @@
 
 #include <fmt/core.h>
 
-#include "common.cu"
+#include "common.h"
 #include "myoptix.h"
 #include "texture.h"
 
-#include "shaders/lambert.cu"
-#include "shaders/specular.cu"
-#include "shaders/cook_torrance.cu"
-#include "shaders/glass.cu"
+#include "shaders/lambert.h"
+#include "shaders/specular.h"
+#include "shaders/cook_torrance.h"
+#include "shaders/glass.h"
 
 #define M_PI 3.14159
 
@@ -49,7 +50,7 @@ __device__ glm::vec3 ACESFilm(glm::vec3 x) {
 __device__ glm::vec3 AgX(glm::vec3 val) {
     // 1. Logarithmic encoding
     // Map a wide dynamic range (-10 to +6 stops) into 0..1
-    val = glm::max(val, 1e-6f); // Safety for log
+    val = glm::max(val, glm::vec3(1e-6f)); // Safety for log
     
     // Manual log2 and encoding
     val.r = (log2f(val.r) + 10.0f) / 16.0f;
@@ -184,7 +185,6 @@ void pathtraceInit(Scene* scene)
         material_ids.push_back(geom.materialid);
     }
     cudaMemcpy(dev_material_ids, material_ids.data(), material_ids.size() * sizeof(int), cudaMemcpyHostToDevice);
-
 
     std::vector<glm::vec3*> vertex_buffer_locs;
     std::vector<Triangle*> triangle_buffer_locs;
@@ -909,9 +909,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
             cudaTimer.record(fmt::format("Morton Precompute, Iter {}", depth+1));
 
-            thrust::sort(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths, sort_rays_morton(dev_morton_codes, dev_hit_geom));
-            thrust::gather(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths, dPtr(dev_paths), dPtr(dev_paths_sorted));
-            thrust::copy(dPtr(dev_paths) + num_paths, dPtr(dev_paths) + last_num_paths, dPtr(dev_paths_sorted) + num_paths);
+            thrust::sort(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf + num_paths), sort_rays_morton(dev_morton_codes, dev_hit_geom));
+            thrust::gather(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf + num_paths), dPtr(dev_paths), dPtr(dev_paths_sorted));
+            thrust::copy(dPtr(dev_paths + num_paths), dPtr(dev_paths + last_num_paths), dPtr(dev_paths_sorted + num_paths));
 
             cudaTimer.record(fmt::format("Sort Mesh Hits Morton, Iter {}", depth+1));
         #endif
