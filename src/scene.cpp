@@ -639,10 +639,10 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
     if (aspect >= 1.0) {
         camera.resolution.y = 1000;
-        camera.resolution.x = aspect * camera.resolution.y;
+        camera.resolution.x = static_cast<int>(aspect * camera.resolution.y);
     } else {
         camera.resolution.x = 1000;
-        camera.resolution.y = camera.resolution.x / aspect;
+        camera.resolution.y = static_cast<int>(camera.resolution.x / aspect);
     }
 
     float fovy = glm::degrees(gltf_camera.perspective.yfov);

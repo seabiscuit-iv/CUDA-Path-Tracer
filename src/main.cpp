@@ -549,7 +549,7 @@ glm::vec3 ACESFilmHost(glm::vec3 x) {
 
 void saveImage()
 {
-    float samples = iteration;
+    float samples = static_cast<float>(iteration);
     // output image file
     Image img(width, height);
 
