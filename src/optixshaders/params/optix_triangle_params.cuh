@@ -3,6 +3,7 @@
 enum RayType
 {
     RAY_TYPE_RADIANCE = 0,
+    RAY_TYPE_DIRECT_LIGHT,
     RAY_TYPE_COUNT
 };
 
@@ -26,6 +27,7 @@ struct OptixPathSegment
     float3 color;
     float3 throughput;
     float3 sample_dir;
+    float3 direct_light_sample_dir;
     int pixelIndex;
     bool kill;
 };
@@ -54,6 +56,7 @@ struct Params
     OptixPathSegment* path_segments;
     float3* debug_image;
     OptixShadeableIntersection* shadeable_intersections;    
+    OptixShadeableIntersection* direct_light_intersections;    
     int* material_ids;
 
     float3** vertex_buffer_locations;

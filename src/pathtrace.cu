@@ -122,6 +122,7 @@ static Material* dev_materials = NULL;
 static PathSegment* dev_paths_A = NULL;
 static PathSegment* dev_paths_B = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
+static ShadeableIntersection* dev_direct_light_intersections = NULL;
 
 static int* dev_material_ids; //for optix
 
@@ -170,6 +171,10 @@ void pathtraceInit(Scene* scene)
 
     cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
     cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
+
+    cudaMalloc(&dev_direct_light_intersections, pixelcount * sizeof(ShadeableIntersection));
+    cudaMemset(dev_direct_light_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
+
 
     cudaMalloc(&dev_morton_codes, pixelcount * sizeof(uint32_t));
 
@@ -249,6 +254,7 @@ void pathtraceFree()
     cudaFree(dev_geoms);
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
+    cudaFree(dev_direct_light_intersections);
 
     cudaFree(dev_morton_codes);
     cudaFree(dev_hit_geom);
@@ -298,6 +304,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - (cam.right * cam.pixelLength.x * pX) 
             - (cam.up    * cam.pixelLength.y * pY)
         );
+
+        segment.direct_light_sample_dir = segment.ray.direction;
 
         segment.pixelIndex = index;
     }
@@ -405,6 +413,7 @@ __global__ void shadePath(
     PathSegment* __restrict__ pathSegments,
     Material* __restrict__ materials,
     ShadeableIntersection* __restrict__ shadeableIntersections,
+    ShadeableIntersection* __restrict__ directLightIntersections,
     int depth,
     bool has_exr,
     cudaTextureObject_t exr,
@@ -423,11 +432,12 @@ __global__ void shadePath(
     }
 
     ShadeableIntersection &intersection = shadeableIntersections[idx];
+    ShadeableIntersection &direct_light_intersection = directLightIntersections[idx];
     PathSegment &path = pathSegments[idx];
 
     thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
 
-    if (intersection.t > 0.0f)
+    if (intersection.t > 0.0f || direct_light_intersection.t > 0.0f)
     {
         Material &material = materials[intersection.materialId];
 
@@ -489,6 +499,15 @@ __global__ void shadePath(
         }
 
         if (DEV_OPTIONS.material_debug_mode) {
+
+            if (!path.kill && depth > 1 && direct_light_intersection.t > 0.0f && materials[direct_light_intersection.materialId].material_type == MaterialType::Emissive) {
+                path.color += path.throughput * materials[direct_light_intersection.materialId].emittance * materials[direct_light_intersection.materialId].color;
+            }
+
+            if (!path.kill && depth == 1 && materials[direct_light_intersection.materialId].material_type == MaterialType::Emissive) {
+                path.kill = true;
+            }
+
             // Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
             // path.sample_dir = glm::vec3(0.0, 1.0, 0.0);
             thrust::uniform_real_distribution<float> u01(0, 1);
@@ -520,34 +539,31 @@ __global__ void shadePath(
             glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
             glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
 
-            glm::vec3 intersect_pos = intersection.t * path.ray.direction + path.ray.origin;
-
-            path.sample_dir = glm::normalize(world_light_pos - intersect_pos);
-
-            glm::vec3 diff = world_light_pos - intersect_pos;
-            float dist_sq = glm::dot(diff, diff);
-            float dist = glm::length(world_light_pos - intersect_pos);
-
             glm::vec3 local_normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
             glm::vec3 light_normal = glm::normalize(glm::vec3(emissive_geom.invTranspose * glm::vec4(local_normal, 0.0f)));
 
-            float cosThetaSurface = glm::dot(normal, path.sample_dir);
-            float cosThetaLight = glm::dot(light_normal, -path.sample_dir);
+            glm::vec3 intersect_pos = intersection.t * path.ray.direction + path.ray.origin;
+            
+            path.sample_dir = glm::normalize(world_light_pos - intersect_pos);
 
-            float light_atten = 0.0f;
-            if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
-                float pdf_area = 1.0f / total_emissive_mesh_area;
-                float pdf_solid_angle = pdf_area * (dist_sq / cosThetaLight);
-                light_atten = cosThetaSurface / pdf_solid_angle;
-            }
+            path.direct_light_sample_dir = glm::normalize(world_light_pos - getPointOnRay(path.ray, intersection.t));
 
-            if (material.material_type == MaterialType::Emissive) {
-                path.color += path.throughput * material.emittance * materialColor;
-                path.kill = true;
-            }
-            else {
+            float dist = glm::length(world_light_pos - intersect_pos);
+
+            if (!path.kill && dist > 0.0f && materials[direct_light_intersection.materialId].material_type != MaterialType::Emissive) {
+                float dist_sq = dist * dist;
+
+                float cosThetaSurface = glm::dot(normal, path.direct_light_sample_dir);
+                float cosThetaLight = glm::dot(light_normal, -path.direct_light_sample_dir);
+
+                float light_atten = 0.0f;
+                if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
+                    float pdf_area = 1.0f / total_emissive_mesh_area;
+                    float pdf_solid_angle = pdf_area * (dist_sq / cosThetaLight);
+                    light_atten = cosThetaSurface / pdf_solid_angle;
+                }
+
                 glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
-                // float pdf = Lambert::PDF(path.sample_dir, normal);
                 path.throughput *= lambert * light_atten;
             }
         }
@@ -860,6 +876,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
         // clean shading chunks
         cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+        cudaMemset(dev_direct_light_intersections, 0, num_paths * sizeof(ShadeableIntersection));
         thrust::sequence(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths);
 
         cudaTimer.record(fmt::format("Memset, Iter {}", depth+1));
@@ -946,6 +963,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 optix_params.path_segments = reinterpret_cast<OptixPathSegment*>(dev_paths_sorted);
                 optix_params.debug_image = reinterpret_cast<float3*>(dev_image);
                 optix_params.shadeable_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_intersections);
+                optix_params.direct_light_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_direct_light_intersections);
                 optix_params.material_ids = dev_material_ids;
                 optix_params.vertex_buffer_locations = (float3**)dev_vertex_buffer_locs;
                 optix_params.triangle_buffer_locations = (OptixTriangle**)dev_triangle_buffer_locs;
@@ -982,6 +1000,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_paths_sorted,
                 dev_materials,
                 dev_intersections,
+                dev_direct_light_intersections,
                 depth,
                 !hst_scene->exr_data.empty(),
                 exr_texture,

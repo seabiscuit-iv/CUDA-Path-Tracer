@@ -95,12 +95,21 @@ void build_optix_accel_structure(
 
 void compile_pathtracing_optix_module(OptixModule& out_module, OptixPipelineCompileOptions& out_pipeline_options);
 
-void create_optix_program_groups(const OptixModule& module, OptixProgramGroup& out_raygen_prog_group, OptixProgramGroup& out_miss_prog_group, OptixProgramGroup& out_hit_prog_group);
+void create_optix_program_groups(
+    const OptixModule& module, 
+    OptixProgramGroup& out_raygen_prog_group, 
+    OptixProgramGroup& out_miss_prog_group, 
+    OptixProgramGroup& out_directlight_miss_prog_group,
+    OptixProgramGroup& out_hit_prog_group, 
+    OptixProgramGroup& out_directlight_prog_group
+);
 
 void initialize_optix_pipeline(
     const OptixProgramGroup& raygen_prog_group, 
     const OptixProgramGroup& miss_prog_group, 
+    const OptixProgramGroup& directlight_miss_prog_group, 
     const OptixProgramGroup& hitgroup_prog_group, 
+    const OptixProgramGroup& directlight_prog_group, 
     const OptixPipelineCompileOptions& pipeline_compile_options,
     OptixPipeline& pipeline
 );
@@ -109,7 +118,9 @@ void create_optix_sbt(
     OptixShaderBindingTable& sbt, 
     const OptixProgramGroup& raygen_prog_group, 
     const OptixProgramGroup& miss_prog_group, 
-    const OptixProgramGroup& hitgroup_program_group
+    const OptixProgramGroup& directlight_miss_prog_group, 
+    const OptixProgramGroup& hitgroup_program_group,
+    const OptixProgramGroup& directlight_hitgroup_program_group
 );
 
 void create_ias(

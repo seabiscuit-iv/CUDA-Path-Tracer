@@ -90,4 +90,8 @@
         "deque": "cpp"
     },
     // "C_Cpp.errorSquiggles": "disabled"
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "never"
+    },
+    "editor.formatOnSave": false
 }

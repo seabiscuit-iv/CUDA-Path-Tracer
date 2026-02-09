@@ -479,14 +479,16 @@ int main(int argc, char** argv)
 
     OptixProgramGroup raygen_prog_group = nullptr;
     OptixProgramGroup miss_prog_group = nullptr;
+    OptixProgramGroup directlight_miss_prog_group = nullptr;
     OptixProgramGroup hit_prog_group = nullptr;
-    create_optix_program_groups(module, raygen_prog_group, miss_prog_group, hit_prog_group);
+    OptixProgramGroup directlight_hit_prog_group = nullptr;
+    create_optix_program_groups(module, raygen_prog_group, miss_prog_group, directlight_miss_prog_group, hit_prog_group, directlight_hit_prog_group);
 
     OptixPipeline optix_pipeline;
-    initialize_optix_pipeline(raygen_prog_group, miss_prog_group, hit_prog_group, pipeline_compile_options, optix_pipeline);
+    initialize_optix_pipeline(raygen_prog_group, miss_prog_group, directlight_miss_prog_group, hit_prog_group, directlight_hit_prog_group, pipeline_compile_options, optix_pipeline);
 
     OptixShaderBindingTable sbt = {};
-    create_optix_sbt(sbt, raygen_prog_group, miss_prog_group, hit_prog_group);
+    create_optix_sbt(sbt, raygen_prog_group, miss_prog_group, directlight_miss_prog_group, hit_prog_group, directlight_hit_prog_group);
 
     std::vector<OptixInstance> optix_instances;
     int id = 0;

@@ -130,7 +130,8 @@ struct PathSegment
     Ray ray;
     glm::vec3 color;
     glm::vec3 throughput;
-    glm::vec3 sample_dir;
+    glm::vec3 sample_dir; // brdf sample dir
+    glm::vec3 direct_light_sample_dir; // direct light sample dir
     int pixelIndex;
     bool kill = false;
 };
