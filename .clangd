@@ -1,0 +1,63 @@
+CompileFlags:
+  CompilationDatabase: "build"
+  Add:
+    # 1. Tell clangd it is a CUDA file
+    - "-x"
+    - "cuda"
+    - "--cuda-gpu-arch=sm_52"
+    - "-D__CUDACC__"
+    - --cuda-path=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0
+    - -fno-caret-diagnostics
+    - -fno-show-column
+    - -fno-diagnostics-color
+    
+    # 2. Mock MSVC behavior so headers like <vector> work
+    - "-fms-extensions"
+    - "-fms-compatibility"
+    - "-fms-compatibility-version=19.40"
+    - "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+    - "-fdelayed-template-parsing"
+    - "-D_ALLOW_ITERATOR_DEBUG_LEVEL_MISMATCH"
+    
+    # 3. Suppress the 'std::vector subscript' noise
+    - "-Wno-unused-parameter"
+    - "-Wno-mismatched-tags"
+    - "-Wno-unknown-attributes"
+    
+    # 4. Fix the 'is_same::value' and Thrust template errors
+    - "-D_LIBCUDACXX_HAS_NO_VARIABLES"
+    - "-D__builtin_std_new_delete"
+
+  Remove:
+    - -forward-unknown-to-host-compiler
+    - -Xcompiler*
+    - /F*
+    - /G*
+    - /nologo
+    - -arch=*
+    - -rdc=*
+    - --diag-suppress*
+
+---
+# 5. The "Mute Button" for external libraries
+If:
+  PathMatch: [.*]
+  PathExclude: [src/.*, include/.*]
+Diagnostics:
+  Suppress: ["*"] # Stop reporting errors in CUDA/OptiX/MSVC headers
+---
+# 6. Specific suppressions for your own code
+Diagnostics:
+  Suppress:
+    ["*"]
+    # - "ovl_no_oper"          # Specifically kills the "no subscript operator" error
+    # - "no_member"            # Kills the "no member named value" error
+    # - "mismatched-tags"      # Kills the class vs struct Triangle error
+    # - "unused-includes"
+    # - "typename_nested_not_found"
+    # - "ovl_unresolvable"
+    # - "incomplete_base_class"
+    # - "override_keyword_only_allowed_on_virtual_member_functions"
+    # - "ovl_no_viable_function_in_call"
+    # - "member_decl_does_not_match"
+    # - "expected_unqualified_id"
