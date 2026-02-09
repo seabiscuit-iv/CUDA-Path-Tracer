@@ -109,6 +109,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE 
         $<$<COMPILE_LANGUAGE:CUDA>:--diag-suppress=27>
+        $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-isystem"${CUDAToolkit_INCLUDE_DIRS}/cccl">
     )
 endif()
 
@@ -122,7 +124,7 @@ find_path(OptiX_INCLUDE
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE include)
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE 
+target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE 
     ${OptiX_INCLUDE}
     ${CUDAToolkit_INCLUDE_DIRS}
 )
