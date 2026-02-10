@@ -25,7 +25,7 @@ static __forceinline__ __device__ void computeRay( uint3 idx, uint3 dim, float3&
 
     origin = path_segment.ray.origin;
     direction = path_segment.ray.direction;
-    directlight_dir = path_segment.direct_light_sample_dir;
+    directlight_dir = path_segment.direct_light_sample;
 }
 
 
@@ -34,8 +34,8 @@ extern "C" __global__ void __raygen__rg()
     const uint3 idx = optixGetLaunchIndex();
     const uint3 dim = optixGetLaunchDimensions();
 
-    float3 ray_origin, ray_direction, ray_directlight_dir;
-    computeRay( idx, dim, ray_origin, ray_direction, ray_directlight_dir );
+    float3 ray_origin, ray_direction, direct_light_sample;
+    computeRay( idx, dim, ray_origin, ray_direction, direct_light_sample );
 
     unsigned int p0, p1, p2;
     optixTrace(
@@ -52,19 +52,32 @@ extern "C" __global__ void __raygen__rg()
         0
     );
 
-    optixTrace(
-        params.handle,
-        ray_origin,
-        ray_directlight_dir,
-        0.0f,
-        1e16f,
-        0.0f,
-        OptixVisibilityMask( 255 ),
-        OPTIX_RAY_FLAG_NONE,
-        1,
-        RAY_TYPE_COUNT,
-        1
-    );
+    const OptixShadeableIntersection& intersection = params.shadeable_intersections[idx.x];
+    if (intersection.t > 0.0f)
+    {
+        float3 hit_point = ray_origin + intersection.t * ray_direction;
+        const float epsilon = 1e-4f; 
+        float3 shadow_ray_origin = hit_point + (intersection.surfaceNormal * epsilon);
+
+        float3 ray_directlight_dir = direct_light_sample - shadow_ray_origin;
+
+        optixTrace(
+            params.handle,
+            shadow_ray_origin,
+            ray_directlight_dir,
+            0.0f,
+            1e16f,
+            0.0f,
+            OptixVisibilityMask( 255 ),
+            OPTIX_RAY_FLAG_NONE,
+            1,
+            RAY_TYPE_COUNT,
+            1
+        );
+    }
+    else {
+        params.direct_light_intersections[idx.x].t = -1.0f;
+    }
 }
 
 

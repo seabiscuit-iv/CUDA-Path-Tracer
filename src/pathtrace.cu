@@ -304,9 +304,6 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - (cam.right * cam.pixelLength.x * pX) 
             - (cam.up    * cam.pixelLength.y * pY)
         );
-
-        segment.direct_light_sample_dir = segment.ray.direction;
-
         segment.pixelIndex = index;
     }
 }
@@ -437,12 +434,12 @@ __global__ void shadePath(
 
     thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
 
-    if (intersection.t > 0.0f || direct_light_intersection.t > 0.0f)
+    if (intersection.t > 0.0f)
     {
         Material &material = materials[intersection.materialId];
 
         glm::vec3 materialColor = material.color;
-
+        
         if(material.albedo_tex >= 0) {
             glm::vec2 uv = intersection.uvs;
 
@@ -499,72 +496,36 @@ __global__ void shadePath(
         }
 
         if (DEV_OPTIONS.material_debug_mode) {
+            glm::vec3 surface_point = intersection.t * path.ray.direction + path.ray.origin;
+            glm::vec3 light_vec = path.direct_light_sample - surface_point;
 
-            if (!path.kill && depth > 1 && direct_light_intersection.t > 0.0f && materials[direct_light_intersection.materialId].material_type == MaterialType::Emissive) {
-                path.color += path.throughput * materials[direct_light_intersection.materialId].emittance * materials[direct_light_intersection.materialId].color;
-            }
+            float dist_sq = glm::dot(light_vec, light_vec);
+            float dist = sqrt(dist_sq);
+            glm::vec3 light_dir = light_vec / dist;
 
-            if (!path.kill && depth == 1 && materials[direct_light_intersection.materialId].material_type == MaterialType::Emissive) {
+            if (material.material_type == MaterialType::Emissive && !path.kill) {
+                path.color += path.throughput * material.emittance * materialColor;
                 path.kill = true;
             }
+            else if (direct_light_intersection.t > 0.0f && material.material_type != MaterialType::Emissive && !path.kill) {
 
-            // Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
-            // path.sample_dir = glm::vec3(0.0, 1.0, 0.0);
-            thrust::uniform_real_distribution<float> u01(0, 1);
-            float rand = u01(rng);
+                float cosThetaSurface = glm::dot(normal, light_dir);
+                float cosThetaLight = glm::dot(direct_light_intersection.surfaceNormal, -light_dir);
 
-            // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
-            int select = select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
-            const Geom& emissive_geom = geoms[emissive_geoms[select]];
-
-            float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
-            float upper = emissive_geoms_area_prefix[select];
-            float denominator = upper - lower;
-            float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
-            tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
-
-            int tri_select = select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
-
-            // sample the triangle at tri_select
-            Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
-            glm::vec3 v0 = emissive_geom.mesh.d_verts[tri.v_indices[0]];
-            glm::vec3 v1 = emissive_geom.mesh.d_verts[tri.v_indices[1]];
-            glm::vec3 v2 = emissive_geom.mesh.d_verts[tri.v_indices[2]];
-
-            float r1 = sqrt(u01(rng));
-            float r2 = u01(rng);
-            float u = 1.0f - r1;
-            float v = r2 * r1;
-
-            glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
-            glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
-
-            glm::vec3 local_normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-            glm::vec3 light_normal = glm::normalize(glm::vec3(emissive_geom.invTranspose * glm::vec4(local_normal, 0.0f)));
-
-            glm::vec3 intersect_pos = intersection.t * path.ray.direction + path.ray.origin;
-            
-            path.sample_dir = glm::normalize(world_light_pos - intersect_pos);
-
-            path.direct_light_sample_dir = glm::normalize(world_light_pos - getPointOnRay(path.ray, intersection.t));
-
-            float dist = glm::length(world_light_pos - intersect_pos);
-
-            if (!path.kill && dist > 0.0f && materials[direct_light_intersection.materialId].material_type != MaterialType::Emissive) {
-                float dist_sq = dist * dist;
-
-                float cosThetaSurface = glm::dot(normal, path.direct_light_sample_dir);
-                float cosThetaLight = glm::dot(light_normal, -path.direct_light_sample_dir);
-
-                float light_atten = 0.0f;
                 if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
                     float pdf_area = 1.0f / total_emissive_mesh_area;
                     float pdf_solid_angle = pdf_area * (dist_sq / cosThetaLight);
-                    light_atten = cosThetaSurface / pdf_solid_angle;
-                }
 
-                glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
-                path.throughput *= lambert * light_atten;
+                    glm::vec3 surface_albedo = materialColor;
+                    glm::vec3 brdf = surface_albedo * (1.0f / 3.14159265f);
+
+                    int lightID = direct_light_intersection.materialId;
+                    glm::vec3 light_radiance = materials[lightID].emittance * materials[lightID].color;
+
+                    glm::vec3 contribution = (light_radiance * brdf * cosThetaSurface) / pdf_solid_angle;
+
+                    path.color += path.throughput * contribution;
+                }
             }
         }
         else {
@@ -594,7 +555,9 @@ __global__ void shadePath(
                 PerfectSpecular::shadePathSpecular(path, material, materialColor);
             }
             else if (material.material_type == MaterialType::Microfacet) {
-                CookTorrance::shadePathCookTorrance(path, material, materialColor, normal);
+               glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal);
+               float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
+               path.throughput *= cook_torrance / pdf;
             }
             else if (material.material_type == MaterialType::Glass) {
                 TransmissiveGlass::shadePathGlass(path, material, materialColor);
@@ -825,7 +788,59 @@ __global__ void drawBVH(
     }
 }
 
+__global__ void sampleDirectLight(
+    int iter,
+    int num_paths,
+    PathSegment* pathSegments,
+    int depth,
+    int num_emissive_geoms,
+    int* emissive_geoms,
+    float* emissive_geoms_area_prefix,
+    const Geom* __restrict__ geoms,
+    float total_emissive_mesh_area
+)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_paths)
+    {
+        return;
+    }
 
+    PathSegment& path = pathSegments[idx];
+
+    thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+    
+    thrust::uniform_real_distribution<float> u01(0, 1);
+    float rand = u01(rng);
+
+    // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
+    int select = select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
+    const Geom& emissive_geom = geoms[emissive_geoms[select]];
+
+    float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
+    float upper = emissive_geoms_area_prefix[select];
+    float denominator = upper - lower;
+    float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
+    tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
+
+    int tri_select = select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
+
+    // sample the triangle at tri_select
+    Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
+    glm::vec3 v0 = emissive_geom.mesh.d_verts[tri.v_indices[0]];
+    glm::vec3 v1 = emissive_geom.mesh.d_verts[tri.v_indices[1]];
+    glm::vec3 v2 = emissive_geom.mesh.d_verts[tri.v_indices[2]];
+
+    float r1 = sqrt(u01(rng));
+    float r2 = u01(rng);
+    float u = 1.0f - r1;
+    float v = r2 * r1;
+
+    glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
+    glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
+
+    path.direct_light_sample = world_light_pos;
+}
 
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
@@ -836,7 +851,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
     // fmt::println("Offset 4: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
 
-    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 2 : hst_scene->state.traceDepth;
+    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 1 : hst_scene->state.traceDepth;
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
 
@@ -933,6 +948,18 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             cudaTimer.record(fmt::format("Sort Mesh Hits Morton, Iter {}", depth+1));
         #endif
 
+        
+        sampleDirectLight<<<numblocksPathSegmentTracing, blockSize1d>>> (
+            iter, 
+            num_paths, 
+            dev_paths_sorted, 
+            depth,
+            hst_scene->emissive_geoms.size(),
+            dev_emissive_geoms,
+            dev_emissive_geom_area_prefix,
+            dev_geoms,
+            hst_scene->total_emissive_mesh_area
+        );
 
         if (PathTracerOptions::Get()->debug_bvh) {
             drawBVH<<<numblocksPathSegmentTracing, blockSize1d>>> (

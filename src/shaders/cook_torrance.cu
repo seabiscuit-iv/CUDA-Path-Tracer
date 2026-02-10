@@ -142,11 +142,11 @@ namespace CookTorrance {
         float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.01f, 0.99f);
 
         float pdf = (1.0f - probSpecular) * pdfDiffuse + probSpecular * pdfSpecular;
-        return pdf;
+        return glm::max(pdf, 0.001f);
     }
 
     
-    __device__ void shadePathCookTorrance(
+    __device__ glm::vec3 shadePathCookTorrance(
         PathSegment &path,
         const Material &material,
         glm::vec3 albedo,
@@ -166,10 +166,9 @@ namespace CookTorrance {
         #endif // REMOVE_FIREFLIES
 
         float absdot = max(0.0f, glm::dot(wi, normal));
-        float pdf = PDF(material, wo, wi, normal, roughness, albedo);
 
         // MICROFACET PDF CLAMP, THIS IS NECESSARY TO REMOVE FIREFLIES
-        path.throughput *= brdf * absdot / glm::max(pdf, 0.001f);
+        return brdf * absdot;
     }   
 
 }

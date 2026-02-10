@@ -41,7 +41,7 @@ namespace CookTorrance {
     __device__ float PDF(const Material &material, glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness, glm::vec3 color);
 
     
-    __device__ void shadePathCookTorrance(
+    __device__ glm::vec3 shadePathCookTorrance(
         PathSegment &path,
         const Material &material,
         glm::vec3 albedo,

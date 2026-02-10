@@ -27,7 +27,7 @@ struct OptixPathSegment
     float3 color;
     float3 throughput;
     float3 sample_dir;
-    float3 direct_light_sample_dir;
+    float3 direct_light_sample;
     int pixelIndex;
     bool kill;
 };
