@@ -322,7 +322,9 @@ void RenderImGui()
 
     changed |= ImGui::SliderFloat("Environment Map Intensity", &PathTracerOptions::Get()->envmap_intensity, 0.0f, 25.0f);
 
-    changed |= ImGui::Checkbox("Direct Light Sampling (MIS)", &PathTracerOptions::Get()->direct_light_sampling);
+    if (!scene->emissive_geoms.empty()) {
+        changed |= ImGui::Checkbox("Direct Light Sampling (MIS)", &PathTracerOptions::Get()->direct_light_sampling);
+    }
 
     ImGui::End();
 

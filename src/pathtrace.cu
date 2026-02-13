@@ -1069,18 +1069,19 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             cudaTimer.record(fmt::format("Sort Mesh Hits Morton, Iter {}", depth+1));
         #endif
 
-        
-        sampleDirectLight<<<numblocksPathSegmentTracing, blockSize1d>>> (
-            iter, 
-            num_paths, 
-            dev_paths_sorted, 
-            depth,
-            hst_scene->emissive_geoms.size(),
-            dev_emissive_geoms,
-            dev_emissive_geom_area_prefix,
-            dev_geoms,
-            hst_scene->total_emissive_mesh_area
-        );
+        if (PathTracerOptions::Get()->direct_light_sampling) {
+            sampleDirectLight<<<numblocksPathSegmentTracing, blockSize1d>>> (
+                iter, 
+                num_paths, 
+                dev_paths_sorted, 
+                depth,
+                hst_scene->emissive_geoms.size(),
+                dev_emissive_geoms,
+                dev_emissive_geom_area_prefix,
+                dev_geoms,
+                hst_scene->total_emissive_mesh_area
+            );
+        }
 
         if (PathTracerOptions::Get()->debug_bvh) {
             drawBVH<<<numblocksPathSegmentTracing, blockSize1d>>> (
