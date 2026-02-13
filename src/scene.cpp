@@ -261,6 +261,7 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
     }
 
     precompute_emissive_mesh_area();
+    precompute_hdri_emission();
 }
 
 
@@ -697,11 +698,15 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     }
 
     precompute_emissive_mesh_area();
+
+    if (!exr_path.empty()) {
+        precompute_hdri_emission();
+    }
 }
 
 
 void Scene::precompute_emissive_mesh_area() {
-    fmt::println("Beginning Mesh Area Precommpute");
+    fmt::println("Beginning Mesh Area Precompute");
     float emissive_area = 0.0f;
     int i = 0;
 
@@ -749,5 +754,54 @@ void Scene::precompute_emissive_mesh_area() {
 
     total_emissive_mesh_area = emissive_area;
 
-    fmt::println("End Mesh Area Precommpute");
+    fmt::println("End Mesh Area Precompute");
+}
+
+
+void Scene::precompute_hdri_emission() {
+    fmt::println("Beginning Environment Map Emission Precompute");
+
+    for(int x = 0; x < exr_width; x++) {
+        float col_total = 0.0f;
+        
+        for(int y = 0; y < exr_height; y++) {
+            float emission = glm::length(exr_data[y * exr_width + x]);
+
+            hdri_column_cdfs.push_back(emission);
+            col_total += emission;
+        }
+
+        for(int y = 0; y < exr_height; y++) {
+            hdri_column_cdfs[y + x * exr_height] /= col_total;
+        }
+
+        hdri_row_cdf.push_back(col_total);
+        total_hdri_emission += col_total;
+    }
+
+    for (int x = 0; x < exr_width; x++) {
+        hdri_row_cdf[x] /= total_hdri_emission;
+    }
+
+    fmt::println("End Environment Map Emission Precompute");
+
+
+    // fmt::println("Beginning Environment Map Verification");
+
+    // for(int c = 0; c < exr_width; c++) {
+    //     float sum = 0.0f;
+    //     for (int y = 0; y < exr_height; y++) {
+    //         sum += hdri_column_cdfs[y + c * exr_height];
+    //     }
+
+    //     fmt::println("EXR COL SUM: {}", sum);
+    // }
+
+    // float sum = 0.0f;
+    // for (int x = 0; x < exr_width; x++) {
+    //     sum += hdri_row_cdf[x];
+    // }
+    // fmt::println("EXR ROW SUM: {}", sum);
+
+    // fmt::println("End Environment Map Verification");
 }

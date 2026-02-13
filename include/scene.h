@@ -13,6 +13,7 @@ private:
     void loadFromJSON(const std::string& jsonName, std::string env_map_path);
     void loadFromGLTF(const std::string& gltfName, std::string env_map_path);
     void precompute_emissive_mesh_area();
+    void precompute_hdri_emission();
 public:
     Scene(std::string filename, const char* env_map);
 
@@ -32,6 +33,11 @@ public:
     float total_emissive_mesh_area;
     std::vector<int> emissive_geoms;
     std::vector<float> emissive_geom_area_prefix;
+
+    // hdri importance sampling stuff
+    float total_hdri_emission;
+    std::vector<float> hdri_row_cdf; // size == exr_width
+    std::vector<float> hdri_column_cdfs; // size == exr_width * exr_height
 };
 
 
