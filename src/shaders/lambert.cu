@@ -19,11 +19,12 @@ namespace Lambert {
         PathSegment &path,
         const Material &material,
         glm::vec3 materialColor,
-        glm::vec3 normal
+        glm::vec3 normal,
+        glm::vec3 wi
     )
     {
         glm::vec3 brdf = BRDF(materialColor);
-        float absdot = max(0.0f, glm::dot(path.sample_dir, normal));
+        float absdot = max(0.0f, glm::dot(wi, normal));
         return brdf * absdot;
     }   
 

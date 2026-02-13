@@ -432,7 +432,7 @@ __global__ void shadePath(
     ShadeableIntersection &direct_light_intersection = directLightIntersections[idx];
     PathSegment &path = pathSegments[idx];
 
-    thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+    thrust::default_random_engine rng = makeSeededRandomEngine(iter, path.pixelIndex, depth);
 
     if (intersection.t > 0.0f)
     {
@@ -542,25 +542,146 @@ __global__ void shadePath(
                 TransmissiveGlass::sampleGlass(path, material, rng, normal);
             }
 
-            if (material.material_type == MaterialType::Emissive) {
-                path.color += path.throughput * material.emittance * materialColor;
-                path.kill = true;
-            } 
-            else if (material.material_type == MaterialType::Diffuse) {
-                glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal);
-                float pdf = Lambert::PDF(path.sample_dir, normal);
-                path.throughput *= lambert / pdf;
-            } 
-            else if (material.material_type == MaterialType::Specular) {
-                PerfectSpecular::shadePathSpecular(path, material, materialColor);
+            if (DEV_OPTIONS.direct_light_sampling) {
+                if (material.material_type == MaterialType::Emissive) {
+                    float mis_weight = 1.0f;
+
+                    if (depth > 1 && !path.last_bounce_was_specular) {
+                        float pdf_bsdf = path.last_pdf;
+
+                        float dist_sq = intersection.t * intersection.t;
+                        float cosThetaLight = glm::dot(normal, -path.ray.direction);
+
+                        if (cosThetaLight > 0.0001f) {
+                            float pdf_dl_area = 1.0f / total_emissive_mesh_area;
+                            float pdf_dl_sa = pdf_dl_area * (dist_sq / cosThetaLight);
+                            
+                            mis_weight = (pdf_bsdf * pdf_bsdf) / (pdf_bsdf * pdf_bsdf + pdf_dl_sa * pdf_dl_sa);
+                        }
+                        else {
+                            mis_weight = 0.0f;
+                        }
+                    }
+
+
+                    path.color += path.throughput * (mis_weight * (material.emittance * materialColor));
+                    path.kill = true;
+                } 
+                else {
+                    bool is_specular = (material.material_type == MaterialType::Specular || material.material_type == MaterialType::Glass);
+
+                    if (direct_light_intersection.t > 0.0f && !is_specular && !path.kill) {
+                        glm::vec3 surface_point = intersection.t * path.ray.direction + path.ray.origin;
+                        glm::vec3 light_vec = path.direct_light_sample - surface_point;
+
+                        float dist_sq = glm::dot(light_vec, light_vec);
+                        float dist = sqrt(dist_sq);
+                        glm::vec3 light_dir = light_vec / dist;
+
+                        float cosThetaSurface = glm::dot(normal, light_dir);
+                        float cosThetaLight = glm::dot(direct_light_intersection.surfaceNormal, -light_dir);
+
+                        if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
+                            float pdf_dl_area = 1.0f / total_emissive_mesh_area;
+                            float pdf_dl_sa = pdf_dl_area * (dist_sq / cosThetaLight);
+
+                            float pdf_bsdf = 0.0f;
+
+                            if (material.material_type == MaterialType::Diffuse) {
+                                pdf_bsdf = Lambert::PDF(light_dir, normal);
+                            }
+                            else if (material.material_type == MaterialType::Microfacet) {
+                                pdf_bsdf = CookTorrance::PDF(material, -path.ray.direction, light_dir, normal, material.roughness, materialColor);
+                            }
+
+                            float mis_weight = (pdf_dl_sa * pdf_dl_sa) / (pdf_dl_sa * pdf_dl_sa + pdf_bsdf * pdf_bsdf);
+
+                            glm::vec3 brdf;
+                            if (material.material_type == MaterialType::Diffuse) {
+                                brdf = materialColor / PI;
+                            }
+                            else if (material.material_type == MaterialType::Microfacet) {
+                                brdf = CookTorrance::BRDF(-path.ray.direction, normal, light_dir, materialColor, material.roughness, material.metallic);
+                            }
+
+                            int light_id = direct_light_intersection.materialId;
+                            glm::vec3 light_color = materials[light_id].color;
+
+                            if (materials[light_id].albedo_tex >= 0) {
+                                glm::vec2 dl_uv = direct_light_intersection.uvs;
+
+                                dl_uv *= materials[light_id].albedo_tex_transform.scale;
+                                
+                                if(materials[light_id].albedo_tex_transform.rotation) {
+                                    float c = cosf(materials[light_id].albedo_tex_transform.rotation);
+                                    float s = sinf(materials[light_id].albedo_tex_transform.rotation);
+
+                                    dl_uv = glm::vec2 (
+                                        c * dl_uv.x - s * dl_uv.y,
+                                        s * dl_uv.x + c * dl_uv.y
+                                    );
+                                }
+
+                                dl_uv += materials[light_id].albedo_tex_transform.offset;
+
+                                float4 tex = tex2D<float4>(textures[materials[light_id].albedo_tex].tex, dl_uv.x, dl_uv.y);
+                                light_color = glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
+                            }
+
+                            glm::vec3 light_radiance = materials[light_id].emittance * light_color;
+
+                            glm::vec3 contribution = (light_radiance * brdf * cosThetaSurface) / pdf_dl_sa;
+
+                            path.color += path.throughput * contribution * mis_weight;
+                        }
+                    }
+
+                    if (material.material_type == MaterialType::Diffuse) {
+                        glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
+                        float pdf = Lambert::PDF(path.sample_dir, normal);
+
+                        path.throughput *= lambert / pdf;
+                        path.last_pdf = pdf;
+                    } 
+                    else if (material.material_type == MaterialType::Specular) {
+                        PerfectSpecular::shadePathSpecular(path, material, materialColor);
+                        path.last_pdf = 1.0;
+                    }
+                    else if (material.material_type == MaterialType::Microfacet) {
+                        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
+                        float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
+                        path.throughput *= cook_torrance / pdf;
+                        path.last_pdf = pdf;
+                    }
+                    else if (material.material_type == MaterialType::Glass) {
+                        TransmissiveGlass::shadePathGlass(path, material, materialColor);
+                        path.last_pdf = 1.0;
+                    }
+
+                    path.last_bounce_was_specular = is_specular;
+                }
             }
-            else if (material.material_type == MaterialType::Microfacet) {
-               glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal);
-               float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
-               path.throughput *= cook_torrance / pdf;
-            }
-            else if (material.material_type == MaterialType::Glass) {
-                TransmissiveGlass::shadePathGlass(path, material, materialColor);
+            else {
+                if (material.material_type == MaterialType::Emissive) {
+                    path.color += path.throughput * material.emittance * materialColor;
+                    path.kill = true;
+                } 
+                else if (material.material_type == MaterialType::Diffuse) {
+                    glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
+                    float pdf = Lambert::PDF(path.sample_dir, normal);
+                    path.throughput *= lambert / pdf;
+                } 
+                else if (material.material_type == MaterialType::Specular) {
+                    PerfectSpecular::shadePathSpecular(path, material, materialColor);
+                }
+                else if (material.material_type == MaterialType::Microfacet) {
+                    glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
+                    float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
+                    path.throughput *= cook_torrance / pdf;
+                }
+                else if (material.material_type == MaterialType::Glass) {
+                    TransmissiveGlass::shadePathGlass(path, material, materialColor);
+                }
             }
         }
     }   
@@ -808,7 +929,7 @@ __global__ void sampleDirectLight(
 
     PathSegment& path = pathSegments[idx];
 
-    thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+    thrust::default_random_engine rng = makeSeededRandomEngine(iter, path.pixelIndex, depth);
     
     thrust::uniform_real_distribution<float> u01(0, 1);
     float rand = u01(rng);

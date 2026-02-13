@@ -27,7 +27,8 @@ namespace Lambert {
         PathSegment &path,
         const Material &material,
         glm::vec3 materialColor,
-        glm::vec3 normal
+        glm::vec3 normal,
+        glm::vec3 wi
     );
 
     __device__ void sampleHemisphere(int idx, int num_paths, int iter, int depth, PathSegment &path, thrust::default_random_engine &rng, glm::vec3 normal);

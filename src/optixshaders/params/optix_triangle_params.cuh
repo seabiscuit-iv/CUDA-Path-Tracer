@@ -30,6 +30,8 @@ struct OptixPathSegment
     float3 direct_light_sample;
     int pixelIndex;
     bool kill;
+    bool last_bounce_was_specular;
+    float last_pdf;
 };
 
 struct OptixShadeableIntersection

@@ -134,6 +134,8 @@ struct PathSegment
     glm::vec3 direct_light_sample; // direct light sample dir
     int pixelIndex;
     bool kill = false;
+    bool last_bounce_was_specular = false;
+    float last_pdf = -1.0f;
 };
 
 // Use with a corresponding PathSegment to do:

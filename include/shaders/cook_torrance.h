@@ -45,7 +45,8 @@ namespace CookTorrance {
         PathSegment &path,
         const Material &material,
         glm::vec3 albedo,
-        glm::vec3 normal
+        glm::vec3 normal,
+        glm::vec3 wi
     );
 
 }
