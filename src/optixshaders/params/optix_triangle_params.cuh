@@ -60,6 +60,7 @@ struct Params
     float3* debug_image;
     OptixShadeableIntersection* shadeable_intersections;    
     OptixShadeableIntersection* direct_light_intersections;    
+    OptixShadeableIntersection* environment_map_intersections;    
     int* material_ids;
 
     float3** vertex_buffer_locations;

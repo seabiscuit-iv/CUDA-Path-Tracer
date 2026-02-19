@@ -123,6 +123,7 @@ static PathSegment* dev_paths_A = NULL;
 static PathSegment* dev_paths_B = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 static ShadeableIntersection* dev_direct_light_intersections = NULL;
+static ShadeableIntersection* dev_environment_map_intersections = NULL;
 
 static int* dev_material_ids; //for optix
 
@@ -175,6 +176,8 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_direct_light_intersections, pixelcount * sizeof(ShadeableIntersection));
     cudaMemset(dev_direct_light_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
+    cudaMalloc(&dev_environment_map_intersections, pixelcount * sizeof(ShadeableIntersection));
+    cudaMemset(dev_environment_map_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
     cudaMalloc(&dev_morton_codes, pixelcount * sizeof(uint32_t));
 
@@ -255,6 +258,7 @@ void pathtraceFree()
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
     cudaFree(dev_direct_light_intersections);
+    cudaFree(dev_environment_map_intersections);
 
     cudaFree(dev_morton_codes);
     cudaFree(dev_hit_geom);
@@ -411,6 +415,7 @@ __global__ void shadePath(
     Material* __restrict__ materials,
     ShadeableIntersection* __restrict__ shadeableIntersections,
     ShadeableIntersection* __restrict__ directLightIntersections,
+    ShadeableIntersection* __restrict__ environmentMapIntersections,
     int depth,
     bool has_exr,
     cudaTextureObject_t exr,
@@ -964,12 +969,14 @@ __global__ void sampleDirectLight(
         path.direct_light_sample = world_light_pos;
     }
 
-    // if (DEV_OPTIONS.environment_map_importance_sampling) {
-    //     thrust::uniform_real_distribution<float> u01(0, 1);
-    //     float rand = u01(rng);
+    if (DEV_OPTIONS.environment_map_importance_sampling) {
+        thrust::uniform_real_distribution<float> u01(0, 1);
+        float rand = u01(rng);
 
-    //     int marginal = select_from_cdf();
-    // }
+        // int marginal = select_from_cdf();
+
+        path.environment_map_sample = glm::vec3(0.0, 1.0, 0.0);
+    }
 }
 
 void pathtrace(uchar4* pbo, int frame, int iter)
@@ -1022,6 +1029,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // clean shading chunks
         cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
         cudaMemset(dev_direct_light_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+        cudaMemset(dev_environment_map_intersections, 0, num_paths * sizeof(ShadeableIntersection));
         thrust::sequence(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths);
 
         cudaTimer.record(fmt::format("Memset, Iter {}", depth+1));
@@ -1122,6 +1130,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 optix_params.debug_image = reinterpret_cast<float3*>(dev_image);
                 optix_params.shadeable_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_intersections);
                 optix_params.direct_light_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_direct_light_intersections);
+                optix_params.environment_map_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_environment_map_intersections);
                 optix_params.material_ids = dev_material_ids;
                 optix_params.vertex_buffer_locations = (float3**)dev_vertex_buffer_locs;
                 optix_params.triangle_buffer_locations = (OptixTriangle**)dev_triangle_buffer_locs;
@@ -1159,6 +1168,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_materials,
                 dev_intersections,
                 dev_direct_light_intersections,
+                dev_environment_map_intersections,
                 depth,
                 !hst_scene->exr_data.empty(),
                 exr_texture,
