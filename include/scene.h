@@ -36,8 +36,8 @@ public:
 
     // hdri importance sampling stuff
     float total_hdri_emission;
-    std::vector<float> hdri_row_cdf; // size == exr_width
-    std::vector<float> hdri_column_cdfs; // size == exr_width * exr_height
+    std::vector<float> hdri_marginal_cdf; // size == exr_height
+    std::vector<float> hdri_conditional_cdfs; // size == exr_width * exr_height
 };
 
 

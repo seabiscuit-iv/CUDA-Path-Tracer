@@ -761,45 +761,67 @@ void Scene::precompute_emissive_mesh_area() {
 void Scene::precompute_hdri_emission() {
     fmt::println("Beginning Environment Map Emission Precompute");
 
-    for(int x = 0; x < exr_width; x++) {
-        float col_total = 0.0f;
+    hdri_conditional_cdfs.resize(exr_height * exr_width);
+    hdri_marginal_cdf.resize(exr_height);
+    total_hdri_emission = 0.0f;
+
+    for(int y = 0; y < exr_height; y++) {
+        float row_total = 0.0f;
+        float theta = PI * (y + 0.5f) / exr_height;
         
-        for(int y = 0; y < exr_height; y++) {
+        for(int x = 0; x < exr_width; x++) {
             float emission = glm::length(exr_data[y * exr_width + x]);
+            float weight = emission * sin(theta);
 
-            hdri_column_cdfs.push_back(emission);
-            col_total += emission;
+            row_total += weight;
+            hdri_conditional_cdfs[y * exr_width + x] = row_total;
         }
 
-        for(int y = 0; y < exr_height; y++) {
-            hdri_column_cdfs[y + x * exr_height] /= col_total;
+        if (row_total > 0.0f) {
+            for(int x = 0; x < exr_width; x++) {
+                hdri_conditional_cdfs[y * exr_width + x] /= row_total;
+            }
+        }
+        else {
+            for(int x = 0; x < exr_width; x++) {
+                hdri_conditional_cdfs[y * exr_width + x] = (float)(x + 1) / (float)exr_width;
+            }
         }
 
-        hdri_row_cdf.push_back(col_total);
-        total_hdri_emission += col_total;
+        hdri_conditional_cdfs[y * exr_width + (exr_width - 1)] = 1.0f;
+
+        total_hdri_emission += row_total;
+        hdri_marginal_cdf[y] = total_hdri_emission;
     }
 
-    for (int x = 0; x < exr_width; x++) {
-        hdri_row_cdf[x] /= total_hdri_emission;
+    if (total_hdri_emission == 0.0f) {
+        fmt::println("HDRI has emission of 0.0f");
+        exit(1);
     }
+
+    for (int y = 0; y < exr_height; y++) {
+        hdri_marginal_cdf[y] /= total_hdri_emission;
+    }
+
+    hdri_marginal_cdf[exr_height - 1] = 1.0f;
 
     fmt::println("End Environment Map Emission Precompute");
 
 
     // fmt::println("Beginning Environment Map Verification");
 
-    // for(int c = 0; c < exr_width; c++) {
+    // for(int c = 0; c < exr_height; c++) {
     //     float sum = 0.0f;
-    //     for (int y = 0; y < exr_height; y++) {
-    //         sum += hdri_column_cdfs[y + c * exr_height];
+    //     for (int y = exr_width - 1; y < exr_width; y++) {
+    //         sum += hdri_conditional_cdfs[y + c * exr_width];
     //     }
 
     //     fmt::println("EXR COL SUM: {}", sum);
     // }
 
     // float sum = 0.0f;
-    // for (int x = 0; x < exr_width; x++) {
-    //     sum += hdri_row_cdf[x];
+    // for (int x = exr_height - 1; x < exr_height; x++) {
+    //     sum += hdri_marginal_cdf[x];
     // }
     // fmt::println("EXR ROW SUM: {}", sum);
 
