@@ -101,7 +101,9 @@ void create_optix_program_groups(
     OptixProgramGroup& out_miss_prog_group, 
     OptixProgramGroup& out_directlight_miss_prog_group,
     OptixProgramGroup& out_hit_prog_group, 
-    OptixProgramGroup& out_directlight_prog_group
+    OptixProgramGroup& out_directlight_prog_group,
+    OptixProgramGroup& envmap_miss_prog_group,
+    OptixProgramGroup& envmap_hit_prog_group
 );
 
 void initialize_optix_pipeline(
@@ -110,6 +112,8 @@ void initialize_optix_pipeline(
     const OptixProgramGroup& directlight_miss_prog_group, 
     const OptixProgramGroup& hitgroup_prog_group, 
     const OptixProgramGroup& directlight_prog_group, 
+    const OptixProgramGroup& envmap_miss_prog_group,
+    const OptixProgramGroup& envmap_hit_prog_group,
     const OptixPipelineCompileOptions& pipeline_compile_options,
     OptixPipeline& pipeline
 );
@@ -120,7 +124,9 @@ void create_optix_sbt(
     const OptixProgramGroup& miss_prog_group, 
     const OptixProgramGroup& directlight_miss_prog_group, 
     const OptixProgramGroup& hitgroup_program_group,
-    const OptixProgramGroup& directlight_hitgroup_program_group
+    const OptixProgramGroup& directlight_hitgroup_program_group,
+    const OptixProgramGroup& envmap_hit_prog_group,
+    const OptixProgramGroup& envmap_miss_prog_group
 );
 
 void create_ias(

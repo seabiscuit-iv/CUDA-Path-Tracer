@@ -292,10 +292,15 @@ void compile_pathtracing_optix_module(OptixModule& module, OptixPipelineCompileO
 void create_optix_program_groups(
     const OptixModule& module, 
     OptixProgramGroup& raygen_prog_group, 
+
     OptixProgramGroup& miss_prog_group, 
     OptixProgramGroup& directlight_miss_prog_group, 
+
     OptixProgramGroup& hitgroup_prog_group,
-    OptixProgramGroup& out_directlight_prog_group
+    OptixProgramGroup& out_directlight_prog_group,
+
+    OptixProgramGroup& envmap_miss_prog_group,
+    OptixProgramGroup& envmap_hit_prog_group
 ) {
     OptixDeviceContext optix = get_optix();
 
@@ -370,6 +375,34 @@ void create_optix_program_groups(
                 &out_directlight_prog_group
                 ) );
     fmt::println("          Created Direct Light Hit Program");
+    
+    OptixProgramGroupDesc envmap_miss_prog_group_desc  = {};
+    envmap_miss_prog_group_desc.kind                   = OPTIX_PROGRAM_GROUP_KIND_MISS;
+    envmap_miss_prog_group_desc.miss.module            = module;
+    envmap_miss_prog_group_desc.miss.entryFunctionName = "__miss__ms_envmap";
+    OPTIX_CHECK_LOG( optixProgramGroupCreate(
+                optix,
+                &envmap_miss_prog_group_desc,
+                1,   // num program groups
+                &program_group_options,
+                LOG, &LOG_SIZE,
+                &envmap_miss_prog_group
+                ) );
+    fmt::println("          Created Environment Map Miss Program");
+
+    OptixProgramGroupDesc envmap_hit_prog_group_desc = {};
+    envmap_hit_prog_group_desc.kind                         = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+    envmap_hit_prog_group_desc.hitgroup.moduleCH            = module;
+    envmap_hit_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch_envmap";
+    OPTIX_CHECK_LOG( optixProgramGroupCreate(
+                optix,
+                &envmap_hit_prog_group_desc,
+                1,   // num program groups
+                &program_group_options,
+                LOG, &LOG_SIZE,
+                &envmap_hit_prog_group
+                ) );
+    fmt::println("          Created Environment Map Hit Program");
 
     fmt::println("Optix Program Group Creation Complete");
 }
@@ -381,6 +414,8 @@ void initialize_optix_pipeline(
     const OptixProgramGroup& directlight_miss_prog_group, 
     const OptixProgramGroup& hitgroup_prog_group, 
     const OptixProgramGroup& directlight_hitgroup_prog_group, 
+    const OptixProgramGroup& envmap_miss_prog_group,
+    const OptixProgramGroup& envmap_hit_prog_group,
     const OptixPipelineCompileOptions& pipeline_compile_options,
     OptixPipeline& pipeline
 ) {
@@ -389,7 +424,9 @@ void initialize_optix_pipeline(
         raygen_prog_group, miss_prog_group, 
         directlight_miss_prog_group, 
         hitgroup_prog_group, 
-        directlight_hitgroup_prog_group
+        directlight_hitgroup_prog_group,
+        envmap_miss_prog_group,
+        envmap_hit_prog_group
     };
 
     OptixPipelineLinkOptions pipeline_link_options = {};
@@ -432,7 +469,9 @@ void create_optix_sbt(
     const OptixProgramGroup& miss_prog_group, 
     const OptixProgramGroup& directlight_miss_prog_group, 
     const OptixProgramGroup& hitgroup_prog_group,
-    const OptixProgramGroup& directlight_hitgroup_prog_group
+    const OptixProgramGroup& directlight_hitgroup_prog_group,
+    const OptixProgramGroup& envmap_hit_prog_group,
+    const OptixProgramGroup& envmap_miss_prog_group
 ) {
     CUdeviceptr  raygen_record;
     const size_t raygen_record_size = sizeof( RayGenSbtRecord );
@@ -447,13 +486,15 @@ void create_optix_sbt(
     );
 
     CUdeviceptr miss_record;
-    size_t      miss_record_size = 2 * sizeof( MissSbtRecord );
+    size_t      miss_record_size = 3 * sizeof( MissSbtRecord );
     cudaMalloc( reinterpret_cast<void**>( &miss_record ), miss_record_size );
-    MissSbtRecord ms_sbt[2];
+    MissSbtRecord ms_sbt[3];
     ms_sbt[0].data = { 0.3f, 0.1f, 0.2f };
     ms_sbt[1].data = { 0.3f, 0.1f, 0.2f };
+    ms_sbt[2].data = { 0.3f, 0.1f, 0.2f };
     OPTIX_CHECK( optixSbtRecordPackHeader( miss_prog_group, &ms_sbt[0] ) );
     OPTIX_CHECK( optixSbtRecordPackHeader( directlight_miss_prog_group, &ms_sbt[1] ) );
+    OPTIX_CHECK( optixSbtRecordPackHeader( envmap_miss_prog_group, &ms_sbt[2] ) );
     cudaMemcpy(
         reinterpret_cast<void*>( miss_record ),
         ms_sbt,
@@ -462,11 +503,12 @@ void create_optix_sbt(
     );
 
     CUdeviceptr hitgroup_record;
-    size_t      hitgroup_record_size = 2 * sizeof( HitGroupSbtRecord );
+    size_t      hitgroup_record_size = 3 * sizeof( HitGroupSbtRecord );
     cudaMalloc( reinterpret_cast<void**>( &hitgroup_record ), hitgroup_record_size );
-    HitGroupSbtRecord hg_sbt[2];
+    HitGroupSbtRecord hg_sbt[3];
     OPTIX_CHECK( optixSbtRecordPackHeader( hitgroup_prog_group, &hg_sbt[0] ) );
     OPTIX_CHECK( optixSbtRecordPackHeader( directlight_hitgroup_prog_group, &hg_sbt[1] ) );
+    OPTIX_CHECK( optixSbtRecordPackHeader( envmap_hit_prog_group, &hg_sbt[2] ) );
     cudaMemcpy(
         reinterpret_cast<void*>( hitgroup_record ),
         hg_sbt,
@@ -477,10 +519,10 @@ void create_optix_sbt(
     sbt.raygenRecord                = raygen_record;
     sbt.missRecordBase              = miss_record;
     sbt.missRecordStrideInBytes     = sizeof( MissSbtRecord );
-    sbt.missRecordCount             = 2;
+    sbt.missRecordCount             = 3;
     sbt.hitgroupRecordBase          = hitgroup_record;
     sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
-    sbt.hitgroupRecordCount         = 2;
+    sbt.hitgroupRecordCount         = 3;
 
     fmt::println("Optix SBT Creation Complete");
 }

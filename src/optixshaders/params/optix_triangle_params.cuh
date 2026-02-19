@@ -4,6 +4,7 @@ enum RayType
 {
     RAY_TYPE_RADIANCE = 0,
     RAY_TYPE_DIRECT_LIGHT,
+    RAY_TYPE_ENV_MAP,
     RAY_TYPE_COUNT
 };
 

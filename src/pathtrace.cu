@@ -146,6 +146,10 @@ static cudaTextureObject_t exr_texture = 0;
 static int* dev_emissive_geoms;
 static float* dev_emissive_geom_area_prefix;
 
+// hdri sampling
+static float* dev_hdri_marginal_cdf;
+static float* dev_hdri_conditional_cdfs;
+
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
     guiData = imGuiData;
@@ -245,6 +249,14 @@ void pathtraceInit(Scene* scene)
 
     cudaMalloc( &dev_emissive_geom_area_prefix, scene->emissive_geom_area_prefix.size() * sizeof(float));
     cudaMemcpy( dev_emissive_geom_area_prefix, scene->emissive_geom_area_prefix.data(), scene->emissive_geom_area_prefix.size() * sizeof(float), cudaMemcpyHostToDevice );
+
+    if (!hst_scene->exr_data.empty()) {
+        cudaMalloc( &dev_hdri_conditional_cdfs, scene->hdri_conditional_cdfs.size() * sizeof(float) );
+        cudaMemcpy( dev_hdri_conditional_cdfs, scene->hdri_conditional_cdfs.data(), scene->hdri_conditional_cdfs.size() * sizeof(float), cudaMemcpyHostToDevice );
+
+        cudaMalloc( &dev_hdri_marginal_cdf, scene->hdri_marginal_cdf.size() * sizeof(float) );
+        cudaMemcpy( dev_hdri_marginal_cdf, scene->hdri_marginal_cdf.data(), scene->hdri_marginal_cdf.size() * sizeof(float), cudaMemcpyHostToDevice );
+    }
 
     checkCUDAError("pathtraceInit");
 }
@@ -408,6 +420,23 @@ __device__ int select_from_cdf(float* cdf, int size, float xi) {
     return low;
 }
 
+__device__ float envmap_pdf(glm::vec3 d, float* marginal_cdf, float* conditional_cdfs, int W, int H) {
+    float phi   = atan2f(d.z, d.x);
+    float theta = acosf(glm::clamp(d.y, -1.0f, 1.0f));
+
+    float u = (phi + PI) / (2.0f * PI);
+    float v = theta / PI;
+
+    int col = glm::clamp(int(u * W), 0, W - 1);
+    int row = glm::clamp(int(v * H), 0, H - 1);
+
+    float p_marginal    = (marginal_cdf[row] - (row == 0 ? 0.0f : marginal_cdf[row - 1])) * H;
+    float p_conditional = (conditional_cdfs[row * W + col] - (col == 0 ? 0.0f : conditional_cdfs[row * W + col - 1])) * W;
+
+    float sin_theta = sinf(theta);
+    return (sin_theta > 1e-6f) ? (p_marginal * p_conditional) / (2.0f * PI * PI * sin_theta) : 0.0f;
+}
+
 __global__ void shadePath(
     int iter,
     int num_paths,
@@ -424,7 +453,11 @@ __global__ void shadePath(
     int* emissive_geoms,
     float* emissive_geoms_area_prefix,
     const Geom* __restrict__ geoms,
-    float total_emissive_mesh_area
+    float total_emissive_mesh_area,
+    float* marginal_cdf,
+    float* conditional_cdfs,
+    int exr_width,
+    int exr_height
 )
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -433,8 +466,10 @@ __global__ void shadePath(
         return;
     }
 
+    ShadeableIntersection default_isect = {};
     ShadeableIntersection &intersection = shadeableIntersections[idx];
     ShadeableIntersection &direct_light_intersection = directLightIntersections[idx];
+    ShadeableIntersection &env_map_intersesction = has_exr ? environmentMapIntersections[idx] : default_isect;
     PathSegment &path = pathSegments[idx];
 
     thrust::default_random_engine rng = makeSeededRandomEngine(iter, path.pixelIndex, depth);
@@ -500,6 +535,8 @@ __global__ void shadePath(
             normal = glm::normalize(TBN * local_normal);
         }
 
+        bool is_specular = (material.material_type == MaterialType::Specular || material.material_type == MaterialType::Glass);
+
         if (DEV_OPTIONS.material_debug_mode) {
             glm::vec3 surface_point = intersection.t * path.ray.direction + path.ray.origin;
             glm::vec3 light_vec = path.direct_light_sample - surface_point;
@@ -547,7 +584,91 @@ __global__ void shadePath(
                 TransmissiveGlass::sampleGlass(path, material, rng, normal);
             }
 
-            if (DEV_OPTIONS.direct_light_sampling) {
+            if (DEV_OPTIONS.environment_map_importance_sampling) {
+                if (material.material_type == MaterialType::Emissive) {
+                    float mis_weight = 1.0f;
+
+                    if (depth > 1 && !path.last_bounce_was_specular) {
+                        float pdf_bsdf = path.last_pdf;
+                        float pdf_env_of_bsdf = envmap_pdf(path.ray.direction, marginal_cdf, conditional_cdfs, exr_width, exr_height);
+
+
+                        mis_weight = (pdf_bsdf * pdf_bsdf) / (pdf_bsdf * pdf_bsdf + pdf_env_of_bsdf * pdf_env_of_bsdf);
+                    }
+
+                    path.color += path.throughput * (mis_weight * (material.emittance * materialColor));
+                    path.kill = true;
+                }
+                else {
+                    if (env_map_intersesction.t < 0.0f && !is_specular && !path.kill && has_exr) {
+                        glm::vec3 env_dir = path.environment_map_sample;
+
+                        float pdf_env_of_env;
+                        float pdf_bsdf_of_env;
+
+                        if (material.material_type == MaterialType::Diffuse) {
+                            pdf_bsdf_of_env = Lambert::PDF(env_dir, normal);
+                        }
+                        else if (material.material_type == MaterialType::Microfacet) {
+                            pdf_bsdf_of_env = CookTorrance::PDF(material, -path.ray.direction, env_dir, normal, material.roughness, materialColor);
+                        }
+
+                        pdf_env_of_env = envmap_pdf(env_dir, marginal_cdf, conditional_cdfs, exr_width, exr_height);
+
+                        float mis_weight = (pdf_env_of_env * pdf_env_of_env) / (pdf_env_of_env * pdf_env_of_env + pdf_bsdf_of_env * pdf_bsdf_of_env);
+
+                        glm::vec3 brdf;
+                        if (material.material_type == MaterialType::Diffuse) {
+                            brdf = materialColor / PI;
+                        }
+                        else if (material.material_type == MaterialType::Microfacet) {
+                            brdf = CookTorrance::BRDF(-path.ray.direction, normal, env_dir, materialColor, material.roughness, material.metallic);
+                        }
+
+                        glm::vec3 d = glm::normalize(env_dir);
+                        float phi   = atan2f(d.z, d.x);       // [-pi, pi]
+                        float theta = glm::acos(glm::clamp(d.y, -1.0f, 1.0f)); // [0, pi]
+
+                        float u = (phi + M_PI) * (1.0f / (2.0f * M_PI));
+                        float v = theta * (1.0f / M_PI);
+
+                        float4 env = tex2D<float4>(exr, u, v);
+                        glm::vec3 env_light = glm::vec3(env.x, env.y, env.z) * DEV_OPTIONS.envmap_intensity;
+
+                        float cosThetaSurface = glm::dot(normal, env_dir);
+
+                        if (cosThetaSurface > 0.0f && pdf_env_of_env > 1e-8f) {
+                            glm::vec3 contribution = (env_light * brdf * cosThetaSurface) / pdf_env_of_env;
+                            path.color += path.throughput * contribution * mis_weight;
+                        }
+                    }
+
+                    if (material.material_type == MaterialType::Diffuse) {
+                        glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
+                        float pdf = Lambert::PDF(path.sample_dir, normal);
+
+                        path.throughput *= lambert / pdf;
+                        path.last_pdf = pdf;
+                    } 
+                    else if (material.material_type == MaterialType::Specular) {
+                        PerfectSpecular::shadePathSpecular(path, material, materialColor);
+                        path.last_pdf = 1.0;
+                    }
+                    else if (material.material_type == MaterialType::Microfacet) {
+                        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
+                        float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
+                        path.throughput *= cook_torrance / pdf;
+                        path.last_pdf = pdf;
+                    }
+                    else if (material.material_type == MaterialType::Glass) {
+                        TransmissiveGlass::shadePathGlass(path, material, materialColor);
+                        path.last_pdf = 1.0;
+                    }
+
+                    path.last_bounce_was_specular = is_specular;
+                }
+            }
+            else if (DEV_OPTIONS.direct_light_sampling) {
                 if (material.material_type == MaterialType::Emissive) {
                     float mis_weight = 1.0f;
 
@@ -573,7 +694,6 @@ __global__ void shadePath(
                     path.kill = true;
                 } 
                 else {
-                    bool is_specular = (material.material_type == MaterialType::Specular || material.material_type == MaterialType::Glass);
 
                     if (direct_light_intersection.t > 0.0f && !is_specular && !path.kill) {
                         glm::vec3 surface_point = intersection.t * path.ray.direction + path.ray.origin;
@@ -693,17 +813,26 @@ __global__ void shadePath(
     else if (!path.kill && has_exr) {
         // hdri
         glm::vec3 d = glm::normalize(path.ray.direction);
-        float phi   = atan2f(d.z, d.x);       // [-pi, pi]
-        float theta = glm::acos(glm::clamp(d.y, -1.0f, 1.0f)); // [0, pi]
-
+        float phi = atan2f(d.z, d.x);
+        float theta = glm::acos(glm::clamp(d.y, -1.0f, 1.0f));
+        
         float u = (phi + M_PI) * (1.0f / (2.0f * M_PI));
         float v = theta * (1.0f / M_PI);
 
         float4 env = tex2D<float4>(exr, u, v);
+        
+        glm::vec3 env_radiance = glm::vec3(env.x, env.y, env.z) * DEV_OPTIONS.envmap_intensity;
 
-        path.color += path.throughput * glm::vec3(env.x, env.y, env.z) * DEV_OPTIONS.envmap_intensity;
+        float mis_weight = 1.0f;
+        if (DEV_OPTIONS.environment_map_importance_sampling && depth > 1 && !path.last_bounce_was_specular) {
+            float pdf_bsdf = path.last_pdf;
+            float pdf_env  = envmap_pdf(d, marginal_cdf, conditional_cdfs, exr_width, exr_height);
+            mis_weight = (pdf_bsdf * pdf_bsdf) / (pdf_bsdf * pdf_bsdf + pdf_env * pdf_env);
+        }
+
+        path.color += path.throughput * env_radiance * mis_weight;
     }
-
+    
     if (intersection.t == -1.0f) {
         path.kill = true;
     }
@@ -923,7 +1052,11 @@ __global__ void sampleDirectLight(
     int* emissive_geoms,
     float* emissive_geoms_area_prefix,
     const Geom* __restrict__ geoms,
-    float total_emissive_mesh_area
+    float total_emissive_mesh_area,
+    float* marginal_cdf,
+    float* conditional_cdfs,
+    int exr_width,
+    int exr_height
 )
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -973,9 +1106,29 @@ __global__ void sampleDirectLight(
         thrust::uniform_real_distribution<float> u01(0, 1);
         float rand = u01(rng);
 
-        // int marginal = select_from_cdf();
+        int marginal = select_from_cdf(marginal_cdf, exr_height, rand);
 
-        path.environment_map_sample = glm::vec3(0.0, 1.0, 0.0);
+        float lower = (marginal == 0) ? 0.0f : marginal_cdf[marginal - 1];
+        float upper = marginal_cdf[marginal];
+        float denominator = upper - lower;
+        float offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
+        offset = glm::clamp(offset, 0.0f, 1.0f);
+
+        int conditional = select_from_cdf(conditional_cdfs + (marginal * exr_width), exr_width, offset);
+
+        float u = (conditional + 0.5f) / exr_width;
+        float v = (marginal + 0.5f) / exr_height;
+
+        float phi = u * 2.0 * PI - PI;
+        float theta = v * PI;
+
+        glm::vec3 dir;
+        float sin_theta = sinf(theta);
+        dir.x = sin_theta * cosf(phi);
+        dir.y = cosf(theta);
+        dir.z = sin_theta * sinf(phi);
+
+        path.environment_map_sample = dir;
     }
 }
 
@@ -1086,7 +1239,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             cudaTimer.record(fmt::format("Sort Mesh Hits Morton, Iter {}", depth+1));
         #endif
 
-        if (PathTracerOptions::Get()->direct_light_sampling) {
+        if (PathTracerOptions::Get()->direct_light_sampling || PathTracerOptions::Get()->environment_map_importance_sampling) {
             sampleDirectLight<<<numblocksPathSegmentTracing, blockSize1d>>> (
                 iter, 
                 num_paths, 
@@ -1096,7 +1249,11 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_emissive_geoms,
                 dev_emissive_geom_area_prefix,
                 dev_geoms,
-                hst_scene->total_emissive_mesh_area
+                hst_scene->total_emissive_mesh_area,
+                dev_hdri_marginal_cdf,
+                dev_hdri_conditional_cdfs,
+                hst_scene->exr_width,
+                hst_scene->exr_height
             );
         }
 
@@ -1177,7 +1334,11 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 dev_emissive_geoms,
                 dev_emissive_geom_area_prefix,
                 dev_geoms,
-                hst_scene->total_emissive_mesh_area
+                hst_scene->total_emissive_mesh_area,
+                dev_hdri_marginal_cdf,
+                dev_hdri_conditional_cdfs,
+                hst_scene->exr_width,
+                hst_scene->exr_height
             );
 
             cudaTimer.record(fmt::format("Shade Path, Iter {}", depth));
