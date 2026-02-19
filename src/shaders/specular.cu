@@ -3,7 +3,7 @@
 namespace PerfectSpecular {
     __device__ void shadePathSpecular(
         PathSegment &path,
-        Material &material,
+        const Material &material,
         glm::vec3 color
     )
     {

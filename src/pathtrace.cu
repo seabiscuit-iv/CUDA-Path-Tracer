@@ -561,6 +561,42 @@ __device__ void sample_materials(
 }
 
 
+__device__ void update_throughput_materials (
+    const Material& material,
+    PathSegment& path,
+    int idx,
+    int num_paths,
+    int iter,
+    int depth,
+    glm::vec3 materialColor,
+    glm::vec3 normal,
+    bool is_specular
+) {
+    if (material.material_type == MaterialType::Diffuse) {
+        glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
+        float pdf = Lambert::PDF(path.sample_dir, normal);
+        path.throughput *= lambert / pdf;
+        path.last_pdf = pdf;
+    } 
+    else if (material.material_type == MaterialType::Specular) {
+        PerfectSpecular::shadePathSpecular(path, material, materialColor);
+        path.last_pdf = 1.0;
+    }
+    else if (material.material_type == MaterialType::Microfacet) {
+        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
+        float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
+        path.throughput *= cook_torrance / pdf;
+        path.last_pdf = pdf;
+    }
+    else if (material.material_type == MaterialType::Glass) {
+        TransmissiveGlass::shadePathGlass(path, material, materialColor);
+        path.last_pdf = 1.0;
+    }
+
+    path.last_bounce_was_specular = is_specular;
+}
+
+
 
 
 
@@ -699,30 +735,6 @@ __global__ void shadePath(
                             path.color += path.throughput * contribution * mis_weight;
                         }
                     }
-
-                    if (material.material_type == MaterialType::Diffuse) {
-                        glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
-                        float pdf = Lambert::PDF(path.sample_dir, normal);
-
-                        path.throughput *= lambert / pdf;
-                        path.last_pdf = pdf;
-                    } 
-                    else if (material.material_type == MaterialType::Specular) {
-                        PerfectSpecular::shadePathSpecular(path, material, materialColor);
-                        path.last_pdf = 1.0;
-                    }
-                    else if (material.material_type == MaterialType::Microfacet) {
-                        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
-                        float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
-                        path.throughput *= cook_torrance / pdf;
-                        path.last_pdf = pdf;
-                    }
-                    else if (material.material_type == MaterialType::Glass) {
-                        TransmissiveGlass::shadePathGlass(path, material, materialColor);
-                        path.last_pdf = 1.0;
-                    }
-
-                    path.last_bounce_was_specular = is_specular;
                 }
             }
             else if (DEV_OPTIONS.direct_light_sampling) {
@@ -817,53 +829,25 @@ __global__ void shadePath(
                             path.color += path.throughput * contribution * mis_weight;
                         }
                     }
-
-                    if (material.material_type == MaterialType::Diffuse) {
-                        glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
-                        float pdf = Lambert::PDF(path.sample_dir, normal);
-
-                        path.throughput *= lambert / pdf;
-                        path.last_pdf = pdf;
-                    } 
-                    else if (material.material_type == MaterialType::Specular) {
-                        PerfectSpecular::shadePathSpecular(path, material, materialColor);
-                        path.last_pdf = 1.0;
-                    }
-                    else if (material.material_type == MaterialType::Microfacet) {
-                        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
-                        float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
-                        path.throughput *= cook_torrance / pdf;
-                        path.last_pdf = pdf;
-                    }
-                    else if (material.material_type == MaterialType::Glass) {
-                        TransmissiveGlass::shadePathGlass(path, material, materialColor);
-                        path.last_pdf = 1.0;
-                    }
-
-                    path.last_bounce_was_specular = is_specular;
                 }
             }
-            else {
-                if (material.material_type == MaterialType::Emissive) {
-                    path.color += path.throughput * material.emittance * materialColor;
-                    path.kill = true;
-                } 
-                else if (material.material_type == MaterialType::Diffuse) {
-                    glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
-                    float pdf = Lambert::PDF(path.sample_dir, normal);
-                    path.throughput *= lambert / pdf;
-                } 
-                else if (material.material_type == MaterialType::Specular) {
-                    PerfectSpecular::shadePathSpecular(path, material, materialColor);
-                }
-                else if (material.material_type == MaterialType::Microfacet) {
-                    glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
-                    float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
-                    path.throughput *= cook_torrance / pdf;
-                }
-                else if (material.material_type == MaterialType::Glass) {
-                    TransmissiveGlass::shadePathGlass(path, material, materialColor);
-                }
+            else if (material.material_type == MaterialType::Emissive) {
+                path.color += path.throughput * material.emittance * materialColor;
+                path.kill = true;
+            }
+
+            if (!path.kill) {
+                update_throughput_materials(
+                    material,
+                    path,
+                    idx,
+                    num_paths,
+                    iter,
+                    depth,
+                    materialColor,
+                    normal,
+                    is_specular
+                );
             }
         }
     }   
