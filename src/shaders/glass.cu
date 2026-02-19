@@ -53,7 +53,7 @@ namespace TransmissiveGlass
         return glm::vec3(r_parallel * r_parallel + r_perpendicular * r_perpendicular) / 2.0f;
     }
 
-    __device__ void sampleGlass(PathSegment &path, Material &material, thrust::default_random_engine &rng, glm::vec3 normal) {
+    __device__ void sampleGlass(PathSegment &path, const Material &material, thrust::default_random_engine &rng, glm::vec3 normal) {
         glm::vec3 wo = -path.ray.direction;
 
         thrust::uniform_real_distribution<float> u01(0, 1);

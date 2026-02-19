@@ -534,6 +534,33 @@ __device__ void render_material_debug_mode(
 }
 
 
+__device__ void sample_materials(
+    const Material& material, 
+    const ShadeableIntersection& intersection, 
+    PathSegment& path, 
+    int idx,
+    int num_paths,
+    int iter,
+    int depth,
+    thrust::default_random_engine& rng,
+    glm::vec3 materialColor,
+    glm::vec3 normal
+) {
+    if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
+        Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
+    } 
+    else if (material.material_type == MaterialType::Specular) {
+        PerfectSpecular::sampleMirror(path, normal);
+    }
+    else if (material.material_type == MaterialType::Microfacet) {
+        CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng, materialColor);
+    }
+    else if (material.material_type == MaterialType::Glass) {
+        TransmissiveGlass::sampleGlass(path, material, rng, normal);
+    }
+}
+
+
 
 
 
@@ -601,18 +628,18 @@ __global__ void shadePath(
             );
         }
         else {
-            if (material.material_type == MaterialType::Emissive || material.material_type == MaterialType::Diffuse) {
-                Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
-            } 
-            else if (material.material_type == MaterialType::Specular) {
-                PerfectSpecular::sampleMirror(path, normal);
-            }
-            else if (material.material_type == MaterialType::Microfacet) {
-                CookTorrance::sampleCookTorrance(path, material, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, material.roughness, rng, materialColor);
-            }
-            else if (material.material_type == MaterialType::Glass) {
-                TransmissiveGlass::sampleGlass(path, material, rng, normal);
-            }
+            sample_materials(
+                material,
+                intersection,
+                path,
+                idx,
+                num_paths,
+                iter,
+                depth,
+                rng,
+                materialColor,
+                normal
+            );
 
             if (DEV_OPTIONS.environment_map_importance_sampling) {
                 if (material.material_type == MaterialType::Emissive) {

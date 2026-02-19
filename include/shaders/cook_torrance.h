@@ -34,7 +34,7 @@ namespace CookTorrance {
 
     __device__ void sampleGGX(PathSegment &path, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng);
 
-    __device__ void sampleCookTorrance(PathSegment &path, Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng, glm::vec3 color);
+    __device__ void sampleCookTorrance(PathSegment &path, const Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng, glm::vec3 color);
 
     __device__ float PDF_GGX( glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness);
     
