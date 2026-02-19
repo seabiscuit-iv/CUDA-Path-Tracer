@@ -132,6 +132,7 @@ struct PathSegment
     glm::vec3 throughput;
     glm::vec3 sample_dir; // brdf sample dir
     glm::vec3 direct_light_sample; // direct light sample dir
+    glm::vec3 environment_map_sample;
     int pixelIndex;
     bool kill = false;
     bool last_bounce_was_specular = false;

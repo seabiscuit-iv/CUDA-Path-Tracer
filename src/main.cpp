@@ -326,6 +326,10 @@ void RenderImGui()
         changed |= ImGui::Checkbox("Direct Light Sampling (MIS)", &PathTracerOptions::Get()->direct_light_sampling);
     }
 
+    if (!scene->exr_data.empty()) {
+        changed |= ImGui::Checkbox("Environment Map Importance Sampling (MIS)", &PathTracerOptions::Get()->environment_map_importance_sampling);
+    }
+
     ImGui::End();
 
     if (changed) {

@@ -931,36 +931,45 @@ __global__ void sampleDirectLight(
 
     thrust::default_random_engine rng = makeSeededRandomEngine(iter, path.pixelIndex, depth);
     
-    thrust::uniform_real_distribution<float> u01(0, 1);
-    float rand = u01(rng);
+    if (DEV_OPTIONS.direct_light_sampling) {
+        thrust::uniform_real_distribution<float> u01(0, 1);
+        float rand = u01(rng);
 
-    // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
-    int select = select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
-    const Geom& emissive_geom = geoms[emissive_geoms[select]];
+        // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
+        int select = select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
+        const Geom& emissive_geom = geoms[emissive_geoms[select]];
 
-    float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
-    float upper = emissive_geoms_area_prefix[select];
-    float denominator = upper - lower;
-    float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
-    tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
+        float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
+        float upper = emissive_geoms_area_prefix[select];
+        float denominator = upper - lower;
+        float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
+        tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
 
-    int tri_select = select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
+        int tri_select = select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
 
-    // sample the triangle at tri_select
-    Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
-    glm::vec3 v0 = emissive_geom.mesh.d_verts[tri.v_indices[0]];
-    glm::vec3 v1 = emissive_geom.mesh.d_verts[tri.v_indices[1]];
-    glm::vec3 v2 = emissive_geom.mesh.d_verts[tri.v_indices[2]];
+        // sample the triangle at tri_select
+        Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
+        glm::vec3 v0 = emissive_geom.mesh.d_verts[tri.v_indices[0]];
+        glm::vec3 v1 = emissive_geom.mesh.d_verts[tri.v_indices[1]];
+        glm::vec3 v2 = emissive_geom.mesh.d_verts[tri.v_indices[2]];
 
-    float r1 = sqrt(u01(rng));
-    float r2 = u01(rng);
-    float u = 1.0f - r1;
-    float v = r2 * r1;
+        float r1 = sqrt(u01(rng));
+        float r2 = u01(rng);
+        float u = 1.0f - r1;
+        float v = r2 * r1;
 
-    glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
-    glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
+        glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
+        glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
 
-    path.direct_light_sample = world_light_pos;
+        path.direct_light_sample = world_light_pos;
+    }
+
+    // if (DEV_OPTIONS.environment_map_importance_sampling) {
+    //     thrust::uniform_real_distribution<float> u01(0, 1);
+    //     float rand = u01(rng);
+
+    //     int marginal = select_from_cdf();
+    // }
 }
 
 void pathtrace(uchar4* pbo, int frame, int iter)

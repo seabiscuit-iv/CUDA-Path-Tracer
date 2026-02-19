@@ -4,7 +4,9 @@
     "cmake.debugConfig": {
         "cwd": "${workspaceFolder}",
         "args": [
-            "scenes\\all_cars.glb",
+            "scenes\\lighting_test.glb",
+            "-e",
+            "scenes\\exr\\goegap_road_4k.exr"
         ]
     },
     "files.associations": {

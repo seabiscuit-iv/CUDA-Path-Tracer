@@ -28,6 +28,7 @@ struct OptixPathSegment
     float3 throughput;
     float3 sample_dir;
     float3 direct_light_sample;
+    float3 environment_map_sample;
     int pixelIndex;
     bool kill;
     bool last_bounce_was_specular;
