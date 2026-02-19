@@ -437,6 +437,74 @@ __device__ float envmap_pdf(glm::vec3 d, float* marginal_cdf, float* conditional
     return (sin_theta > 1e-6f) ? (p_marginal * p_conditional) / (2.0f * PI * PI * sin_theta) : 0.0f;
 }
 
+
+__device__ glm::vec3 get_albedo(const Material& material, glm::vec2 uv, const TextureData* textures) {
+    if(material.albedo_tex >= 0) {
+        uv *= material.albedo_tex_transform.scale;
+        
+        if(material.albedo_tex_transform.rotation) {
+            float c = cosf(material.albedo_tex_transform.rotation);
+            float s = sinf(material.albedo_tex_transform.rotation);
+
+            uv = glm::vec2 (
+                c * uv.x - s * uv.y,
+                s * uv.x + c * uv.y
+            );
+        }
+
+        uv += material.albedo_tex_transform.offset;
+
+        float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, uv.x, uv.y);
+        return glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
+    }
+    else {
+        return material.color;
+    }
+}
+
+
+__device__ glm::vec3 get_normal(const Material& material, const TextureData* textures, const ShadeableIntersection& intersection, glm::vec3* out_normal_map) {
+    if (material.normal_tex >= 0) {
+        glm::vec2 uv = intersection.uvs;
+
+        uv *= material.normal_tex_transform.scale;
+        
+        if(material.normal_tex_transform.rotation) {
+            float c = cosf(material.normal_tex_transform.rotation);
+            float s = sinf(material.normal_tex_transform.rotation);
+
+            uv = glm::vec2 (
+                c * uv.x - s * uv.y,
+                s * uv.x + c * uv.y
+            );
+        }
+
+        uv += material.normal_tex_transform.offset;
+
+
+        float4 tex = tex2D<float4>(textures[material.normal_tex].tex, uv.x, uv.y);
+        glm::vec3 local_normal = glm::vec3(tex.x, tex.y, tex.z);
+
+        *out_normal_map = local_normal;
+
+        local_normal.x = local_normal.r * 2.0f - 1.0f;
+        local_normal.y = local_normal.g * 2.0f - 1.0f;
+        local_normal.z = local_normal.b * 2.0f - 1.0f;
+
+        glm::vec3 bitangent = glm::normalize(glm::cross(intersection.surfaceTangent, intersection.surfaceNormal));
+
+        glm::mat3 TBN = glm::mat3(intersection.surfaceTangent, bitangent, intersection.surfaceNormal);
+
+        return glm::normalize(TBN * local_normal);
+    }
+    else {
+        return intersection.surfaceNormal;
+    }
+}
+
+
+
+
 __global__ void shadePath(
     int iter,
     int num_paths,
@@ -478,96 +546,28 @@ __global__ void shadePath(
     {
         Material &material = materials[intersection.materialId];
 
-        glm::vec3 materialColor = material.color;
-        
-        if(material.albedo_tex >= 0) {
-            glm::vec2 uv = intersection.uvs;
+        glm::vec3 materialColor = get_albedo(material, intersection.uvs, textures);
 
-            uv *= material.albedo_tex_transform.scale;
-            
-            if(material.albedo_tex_transform.rotation) {
-                float c = cosf(material.albedo_tex_transform.rotation);
-                float s = sinf(material.albedo_tex_transform.rotation);
-
-                uv = glm::vec2 (
-                    c * uv.x - s * uv.y,
-                    s * uv.x + c * uv.y
-                );
-            }
-
-            uv += material.albedo_tex_transform.offset;
-
-            float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, uv.x, uv.y);
-            materialColor = glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
-        }
-
-        glm::vec3 normal = intersection.surfaceNormal;
         glm::vec3 normal_map;
-        if (material.normal_tex >= 0) {
-            glm::vec2 uv = intersection.uvs;
-
-            uv *= material.normal_tex_transform.scale;
-            
-            if(material.normal_tex_transform.rotation) {
-                float c = cosf(material.normal_tex_transform.rotation);
-                float s = sinf(material.normal_tex_transform.rotation);
-
-                uv = glm::vec2 (
-                    c * uv.x - s * uv.y,
-                    s * uv.x + c * uv.y
-                );
-            }
-
-            uv += material.normal_tex_transform.offset;
-
-
-            float4 tex = tex2D<float4>(textures[material.normal_tex].tex, uv.x, uv.y);
-            glm::vec3 local_normal = glm::vec3(tex.x, tex.y, tex.z);
-            normal_map = local_normal;
-            local_normal.x = local_normal.r * 2.0f - 1.0f;
-            local_normal.y = local_normal.g * 2.0f - 1.0f;
-            local_normal.z = local_normal.b * 2.0f - 1.0f;
-
-            glm::vec3 bitangent = glm::normalize(glm::cross(intersection.surfaceNormal, intersection.surfaceTangent));
-
-            glm::mat3 TBN = glm::mat3(intersection.surfaceTangent, bitangent, intersection.surfaceNormal);
-
-            normal = glm::normalize(TBN * local_normal);
-        }
+        glm::vec3 normal = get_normal(material, textures, intersection, &normal_map);
 
         bool is_specular = (material.material_type == MaterialType::Specular || material.material_type == MaterialType::Glass);
 
-        if (DEV_OPTIONS.material_debug_mode) {
-            glm::vec3 surface_point = intersection.t * path.ray.direction + path.ray.origin;
-            glm::vec3 light_vec = path.direct_light_sample - surface_point;
-
-            float dist_sq = glm::dot(light_vec, light_vec);
-            float dist = sqrt(dist_sq);
-            glm::vec3 light_dir = light_vec / dist;
+        if (DEV_OPTIONS.material_debug_mode != 0) {
+            glm::vec3 debug_color = 
+                DEV_OPTIONS.material_debug_mode == 1 ? materialColor :
+                DEV_OPTIONS.material_debug_mode == 2 ? normal :
+                /* DEV_OPTIONS.material_debug_mode == 3 ? */ normal_map;
 
             if (material.material_type == MaterialType::Emissive && !path.kill) {
-                path.color += path.throughput * material.emittance * materialColor;
+                path.color += path.throughput * material.emittance * material.color;
                 path.kill = true;
             }
-            else if (direct_light_intersection.t > 0.0f && material.material_type != MaterialType::Emissive && !path.kill) {
-
-                float cosThetaSurface = glm::dot(normal, light_dir);
-                float cosThetaLight = glm::dot(direct_light_intersection.surfaceNormal, -light_dir);
-
-                if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
-                    float pdf_area = 1.0f / total_emissive_mesh_area;
-                    float pdf_solid_angle = pdf_area * (dist_sq / cosThetaLight);
-
-                    glm::vec3 surface_albedo = materialColor;
-                    glm::vec3 brdf = surface_albedo * (1.0f / 3.14159265f);
-
-                    int lightID = direct_light_intersection.materialId;
-                    glm::vec3 light_radiance = materials[lightID].emittance * materials[lightID].color;
-
-                    glm::vec3 contribution = (light_radiance * brdf * cosThetaSurface) / pdf_solid_angle;
-
-                    path.color += path.throughput * contribution;
-                }
+            else {
+                Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
+                glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, debug_color, normal, path.sample_dir);
+                float pdf = Lambert::PDF(path.sample_dir, normal);
+                path.throughput *= lambert / pdf;
             }
         }
         else {
@@ -1141,7 +1141,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
     // fmt::println("Offset 4: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
 
-    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 1 : hst_scene->state.traceDepth;
+    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 2 : hst_scene->state.traceDepth;
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
 
