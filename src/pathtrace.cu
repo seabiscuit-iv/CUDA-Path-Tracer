@@ -28,6 +28,7 @@
 #include "texture.h"
 #include "tonemapping.h"
 #include "material_queries.h"
+#include "material_debug_render.h"
 
 #include "shaders/lambert.h"
 #include "shaders/specular.h"
@@ -391,34 +392,6 @@ __device__ float envmap_pdf(glm::vec3 d, float* marginal_cdf, float* conditional
 }
 
 
-__device__ void render_material_debug_mode(
-    const Material& material, 
-    PathSegment& path, 
-    glm::vec3 materialColor, 
-    glm::vec3 normal, 
-    glm::vec3 normal_map,
-    int idx,
-    int num_paths,
-    int iter,
-    int depth,
-    thrust::default_random_engine& rng
-) {
-    glm::vec3 debug_color = 
-        DEV_OPTIONS.material_debug_mode == 1 ? materialColor :
-        DEV_OPTIONS.material_debug_mode == 2 ? normal :
-        /* DEV_OPTIONS.material_debug_mode == 3 ? */ normal_map;
-
-    if (material.material_type == MaterialType::Emissive && !path.kill) {
-        path.color += path.throughput * material.emittance * material.color;
-        path.kill = true;
-    }
-    else {
-        Lambert::sampleHemisphere(idx, num_paths, iter, depth, path, rng, normal);
-        glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, debug_color, normal, path.sample_dir);
-        float pdf = Lambert::PDF(path.sample_dir, normal);
-        path.throughput *= lambert / pdf;
-    }
-}
 
 
 __device__ void sample_materials(
@@ -547,7 +520,8 @@ __global__ void shadePath(
                 num_paths,
                 iter,
                 depth,
-                rng
+                rng,
+                DEV_OPTIONS.material_debug_mode
             );
         }
         else {
