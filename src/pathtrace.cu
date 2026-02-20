@@ -31,6 +31,7 @@
 #include "material_debug_render.h"
 #include "sample_materials.h"
 #include "update_throughput_materials.h"
+#include "morton_codes.h"
 
 #include "shaders/lambert.h"
 #include "shaders/specular.h"
@@ -699,60 +700,8 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
         PathSegment iterationPath = iterationPaths[index];
         glm::vec3 color = iterationPath.color;
 
-        // this should not exist
-        // float maxIntensity = 1000.0f;
-        // float luminance = glm::dot(color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
-        // if (luminance > maxIntensity) {
-        //     color *= (maxIntensity / luminance);
-        // }
-
         image[iterationPath.pixelIndex] += color;
     }
-}
-
-#define MORTON_INTERP_DIST 1.0f
-
-__device__ inline uint32_t expandBits(uint32_t v) {
-    v = (v * 0x00010001u) & 0xFF0000FFu;
-    v = (v * 0x00000101u) & 0x0F00F00Fu;
-    v = (v * 0x00000011u) & 0xC30C30C3u;
-    v = (v * 0x00000005u) & 0x49249249u;
-    return v;
-}
-
-__device__ inline uint32_t morton3D(float x, float y, float z) {
-    x = fminf(fmaxf(x * 1024.0f, 0.0f), 1023.0f);
-    y = fminf(fmaxf(y * 1024.0f, 0.0f), 1023.0f);
-    z = fminf(fmaxf(z * 1024.0f, 0.0f), 1023.0f);
-
-    uint32_t xx = expandBits((uint32_t)x);
-    uint32_t yy = expandBits((uint32_t)y);
-    uint32_t zz = expandBits((uint32_t)z);
-
-    return (xx << 2) | (yy << 1) | zz;
-}
-
-__device__ void normalizePoint(const glm::vec3& point, glm::vec3& out, const float scene_extent) {
-    out.x = (point.x + scene_extent) / (2.0f * scene_extent);
-    out.y = (point.y + scene_extent) / (2.0f * scene_extent);
-    out.z = (point.z + scene_extent) / (2.0f * scene_extent);
-}
-
-__device__ void normalizeDirection(const glm::vec3& dir, glm::vec3& out) {
-    out = (dir + glm::vec3(1.0f)) * 0.5f;
-}
-
-__device__ uint32_t rayMortonCode(const Ray& ray, const float scene_extent) {
-    glm::vec3 p0_n, p1_n;
-    
-    normalizePoint(ray.origin, p0_n, scene_extent);
-    
-    glm::vec3 farPoint = ray.origin + (ray.direction * MORTON_INTERP_DIST); 
-    normalizePoint(farPoint, p1_n, scene_extent);
-
-    glm::vec3 midpoint = 0.5f * (p0_n + p1_n);
-
-    return morton3D(midpoint.x, midpoint.y, midpoint.z);
 }
 
 __global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegments, const Geom* mesh, uint32_t* morton_codes, bool* hit_geoms) {
