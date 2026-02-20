@@ -27,6 +27,7 @@
 #include "myoptix.h"
 #include "texture.h"
 #include "tonemapping.h"
+#include "material_queries.h"
 
 #include "shaders/lambert.h"
 #include "shaders/specular.h"
@@ -372,20 +373,6 @@ __global__ void computeIntersections(
     }
 }
 
-__device__ int select_from_cdf(float* cdf, int size, float xi) {
-    int low = 0;
-    int high = size - 1;
-    while (low < high) {
-        int mid = low + (high - low) / 2;
-        if (cdf[mid] < xi) {
-            low = mid + 1;
-        } else {
-            high = mid;
-        }
-    }
-    return low;
-}
-
 __device__ float envmap_pdf(glm::vec3 d, float* marginal_cdf, float* conditional_cdfs, int W, int H) {
     float phi   = atan2f(d.z, d.x);
     float theta = acosf(glm::clamp(d.y, -1.0f, 1.0f));
@@ -402,72 +389,6 @@ __device__ float envmap_pdf(glm::vec3 d, float* marginal_cdf, float* conditional
     float sin_theta = sinf(theta);
     return (sin_theta > 1e-6f) ? (p_marginal * p_conditional) / (2.0f * PI * PI * sin_theta) : 0.0f;
 }
-
-
-__device__ glm::vec3 get_albedo(const Material& material, glm::vec2 uv, const TextureData* textures) {
-    if(material.albedo_tex >= 0) {
-        uv *= material.albedo_tex_transform.scale;
-        
-        if(material.albedo_tex_transform.rotation) {
-            float c = cosf(material.albedo_tex_transform.rotation);
-            float s = sinf(material.albedo_tex_transform.rotation);
-
-            uv = glm::vec2 (
-                c * uv.x - s * uv.y,
-                s * uv.x + c * uv.y
-            );
-        }
-
-        uv += material.albedo_tex_transform.offset;
-
-        float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, uv.x, uv.y);
-        return glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
-    }
-    else {
-        return material.color;
-    }
-}
-
-
-__device__ glm::vec3 get_normal(const Material& material, const TextureData* textures, const ShadeableIntersection& intersection, glm::vec3* out_normal_map) {
-    if (material.normal_tex >= 0) {
-        glm::vec2 uv = intersection.uvs;
-
-        uv *= material.normal_tex_transform.scale;
-        
-        if(material.normal_tex_transform.rotation) {
-            float c = cosf(material.normal_tex_transform.rotation);
-            float s = sinf(material.normal_tex_transform.rotation);
-
-            uv = glm::vec2 (
-                c * uv.x - s * uv.y,
-                s * uv.x + c * uv.y
-            );
-        }
-
-        uv += material.normal_tex_transform.offset;
-
-
-        float4 tex = tex2D<float4>(textures[material.normal_tex].tex, uv.x, uv.y);
-        glm::vec3 local_normal = glm::vec3(tex.x, tex.y, tex.z);
-
-        *out_normal_map = local_normal;
-
-        local_normal.x = local_normal.r * 2.0f - 1.0f;
-        local_normal.y = local_normal.g * 2.0f - 1.0f;
-        local_normal.z = local_normal.b * 2.0f - 1.0f;
-
-        glm::vec3 bitangent = glm::normalize(glm::cross(intersection.surfaceTangent, intersection.surfaceNormal));
-
-        glm::mat3 TBN = glm::mat3(intersection.surfaceTangent, bitangent, intersection.surfaceNormal);
-
-        return glm::normalize(TBN * local_normal);
-    }
-    else {
-        return intersection.surfaceNormal;
-    }
-}
-
 
 
 __device__ void render_material_debug_mode(
@@ -1081,7 +1002,7 @@ __global__ void sampleDirectLight(
         float rand = u01(rng);
 
         // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
-        int select = select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
+        int select = cudaUtils::select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
         const Geom& emissive_geom = geoms[emissive_geoms[select]];
 
         float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
@@ -1090,7 +1011,7 @@ __global__ void sampleDirectLight(
         float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
         tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
 
-        int tri_select = select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
+        int tri_select = cudaUtils::select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
 
         // sample the triangle at tri_select
         Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
@@ -1113,7 +1034,7 @@ __global__ void sampleDirectLight(
         thrust::uniform_real_distribution<float> u01(0, 1);
         float rand = u01(rng);
 
-        int marginal = select_from_cdf(marginal_cdf, exr_height, rand);
+        int marginal = cudaUtils::select_from_cdf(marginal_cdf, exr_height, rand);
 
         float lower = (marginal == 0) ? 0.0f : marginal_cdf[marginal - 1];
         float upper = marginal_cdf[marginal];
@@ -1121,7 +1042,7 @@ __global__ void sampleDirectLight(
         float offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
         offset = glm::clamp(offset, 0.0f, 1.0f);
 
-        int conditional = select_from_cdf(conditional_cdfs + (marginal * exr_width), exr_width, offset);
+        int conditional = cudaUtils::select_from_cdf(conditional_cdfs + (marginal * exr_width), exr_width, offset);
 
         float u = (conditional + 0.5f) / exr_width;
         float v = (marginal + 0.5f) / exr_height;

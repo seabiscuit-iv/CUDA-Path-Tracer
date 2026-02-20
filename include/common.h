@@ -46,5 +46,8 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
 thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth); \
 thrust::uniform_real_distribution<float> u01(0, 1)
 
+namespace cudaUtils {
+    __device__ int select_from_cdf(float* cdf, int size, float xi);
+}
 
 #endif
