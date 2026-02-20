@@ -733,29 +733,6 @@ __global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegm
 } 
 
 
-
-
-struct sort_rays_morton {
-    const uint32_t* d_morton_codes;
-    const bool* d_hit_geoms;
-
-    sort_rays_morton(const uint32_t* d_m_c, const bool* d_h_g) :
-        d_morton_codes(d_m_c),
-        d_hit_geoms(d_h_g)
-    {}
-
-    __device__ bool operator()(int pA, int pB) const {
-        bool b = !d_hit_geoms[pB];
-        if (b || !d_hit_geoms[pA]) {
-            return b;
-        }
-
-        return d_morton_codes[pA] < d_morton_codes[pB];
-    }
-};
-
-
-
 __global__ void drawBVH(
     int depth,
     int num_paths,
