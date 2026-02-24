@@ -78,7 +78,7 @@ void getInputFromCuString( std::string&                    input,
 
 #define ABSOLUTE_INCLUDE_DIRS \
   "C:/ProgramData/NVIDIA Corporation/OptiX SDK 9.1.0/include", \
-  "C:/Users/saahi/Documents/Homework/cis-5650/CUDA-Path-Tracer/external/include", \
+  "C:/Users/saahi/Documents/Homework/cis-5650/luxion/external/include", \
   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include"
 //   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl/cuda/std", \
 //   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl" 
