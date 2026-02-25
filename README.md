@@ -39,6 +39,17 @@ CUDA Path Tracer
   - [Rendering Pipeline Improvements](#rendering-pipeline-improvements)
     - [Terminated Path Partitioning](#terminated-path-partitioning)
     - [Material Sorting](#material-sorting)
+- Performance Analysis
+  - Bounding Volume Hierarchy
+  - Terminated Path Partitioning
+  - Material Sorting
+- Renders
+- Future Goals
+- Miscallaneous Lessons
+  - Firefly Reduction
+  - FPU Operation Intrinsics
+  - Caching Division Values
+- References
 
 <br/>
 
