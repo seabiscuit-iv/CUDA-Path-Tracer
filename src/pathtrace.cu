@@ -1014,6 +1014,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 optix_params.triangle_buffer_locations = (OptixTriangle**)dev_triangle_buffer_locs;
                 optix_params.normal_buffer_locations = (float3**)dev_normal_buffer_locs;
                 optix_params.uv_buffer_locations = (float2**)dev_uv_buffer_locs;
+                optix_params.direct_light_sampling = PathTracerOptions::Get()->direct_light_sampling;
+                optix_params.envmap_sampling = PathTracerOptions::Get()->environment_map_importance_sampling;
                 cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
                 OPTIX_CHECK(
                     optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);

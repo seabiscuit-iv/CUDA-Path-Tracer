@@ -68,6 +68,9 @@ struct Params
     OptixTriangle** triangle_buffer_locations;
     float3** normal_buffer_locations;
     float2** uv_buffer_locations;
+
+    bool direct_light_sampling;
+    bool envmap_sampling;
 };
 
 struct RayGenData

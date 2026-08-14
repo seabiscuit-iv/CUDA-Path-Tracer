@@ -266,7 +266,7 @@ void compile_pathtracing_optix_module(OptixModule& module, OptixPipelineCompileO
     OptixModuleCompileOptions module_compile_options = {};
     pipeline_compile_options.usesMotionBlur        = false;
     pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-    pipeline_compile_options.numPayloadValues      = 0; // fix later
+    pipeline_compile_options.numPayloadValues      = 1; // occlusion flag for the env map shadow ray
     pipeline_compile_options.numAttributeValues    = 3; // fix later
     pipeline_compile_options.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE;
     pipeline_compile_options.pipelineLaunchParamsVariableName = "params"; // fix later
@@ -392,8 +392,6 @@ void create_optix_program_groups(
 
     OptixProgramGroupDesc envmap_hit_prog_group_desc = {};
     envmap_hit_prog_group_desc.kind                         = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-    envmap_hit_prog_group_desc.hitgroup.moduleCH            = module;
-    envmap_hit_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch_envmap";
     OPTIX_CHECK_LOG( optixProgramGroupCreate(
                 optix,
                 &envmap_hit_prog_group_desc,
