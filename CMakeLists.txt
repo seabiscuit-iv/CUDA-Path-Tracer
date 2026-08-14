@@ -113,6 +113,12 @@ if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE 
         $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>>:-lineinfo>
     )
+
+    if(MSVC)
+        target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE 
+            $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>
+        )
+    endif()
 endif()
 
 find_package(CUDAToolkit REQUIRED)
