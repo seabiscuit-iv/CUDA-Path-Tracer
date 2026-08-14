@@ -35,6 +35,14 @@ extern "C" __global__ void __raygen__rg()
     const uint3 idx = optixGetLaunchIndex();
     const uint3 dim = optixGetLaunchDimensions();
 
+    if ( params.path_segments[idx.x].kill )
+    {
+        params.shadeable_intersections[idx.x].t = -1.0f;
+        params.direct_light_intersections[idx.x].t = -1.0f;
+        params.environment_map_intersections[idx.x].t = -0.5f;
+        return;
+    }
+
     float3 ray_origin, ray_direction, direct_light_sample, environment_map_sample;
     computeRay( idx, dim, ray_origin, ray_direction, direct_light_sample, environment_map_sample );
 

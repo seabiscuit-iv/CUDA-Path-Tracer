@@ -1,6 +1,8 @@
 // CONFIGURATION
-#define STREAM_COMPACTION 0
+#define STREAM_COMPACTION 1
 #define MATERIAL_SORTING 0  // enable this if you have a high number of materials
+
+#define RUSSIAN_ROULETTE_MIN_DEPTH 3
 
 // Set this to -1 when profiling off
 #define MAX_ITERATIONS -1

@@ -640,6 +640,7 @@ __global__ void shadePath(
                     num_paths,
                     iter,
                     depth,
+                    rng,
                     materialColor,
                     normal,
                     is_specular
@@ -1069,7 +1070,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         }
 
         #if STREAM_COMPACTION
-            if (depth == 1 && !PathTracerOptions::Get()->debug_bvh) {
+            if (!iterationComplete && !PathTracerOptions::Get()->debug_bvh) {
                 auto new_end = thrust::partition(dPtr(dev_paths_sorted), dPtr(dev_paths_sorted) + num_paths, path_terminated());
                 last_num_paths = num_paths;
                 num_paths = new_end - dPtr(dev_paths_sorted);

@@ -12,6 +12,7 @@ __device__ void update_throughput_materials (
     int num_paths,
     int iter,
     int depth,
+    thrust::default_random_engine& rng,
     glm::vec3 materialColor,
     glm::vec3 normal,
     bool is_specular
@@ -38,4 +39,17 @@ __device__ void update_throughput_materials (
     }
 
     path.last_bounce_was_specular = is_specular;
+
+    if (depth >= RUSSIAN_ROULETTE_MIN_DEPTH) {
+        float max_throughput = glm::max(path.throughput.x, glm::max(path.throughput.y, path.throughput.z));
+        float survival = glm::clamp(max_throughput, 0.0f, 1.0f);
+
+        thrust::uniform_real_distribution<float> u01(0, 1);
+        if (u01(rng) >= survival) {
+            path.kill = true;
+        }
+        else {
+            path.throughput /= survival;
+        }
+    }
 }
