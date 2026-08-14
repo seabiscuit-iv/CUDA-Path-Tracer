@@ -9,6 +9,8 @@
 #include <thrust/partition.h>
 #include <thrust/device_vector.h>
 #include <thrust/gather.h>
+#include <thrust/sort.h>
+#include <thrust/sequence.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -107,7 +109,6 @@ static glm::vec2** dev_uv_buffer_locs;
 static CUdeviceptr d_optix_paramters;
 
 static uint32_t* dev_morton_codes;
-static bool* dev_hit_geom;
 static int* dev_path_scatter_buf;
 
 static cudaArray_t dev_exr_array;
@@ -155,8 +156,6 @@ void pathtraceInit(Scene* scene)
     cudaMemset(dev_environment_map_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
     cudaMalloc(&dev_morton_codes, pixelcount * sizeof(uint32_t));
-
-    cudaMalloc(&dev_hit_geom, pixelcount * sizeof(bool));
 
     cudaMalloc(&dev_path_scatter_buf, pixelcount * sizeof(int));
 
@@ -244,7 +243,6 @@ void pathtraceFree()
     cudaFree(dev_environment_map_intersections);
 
     cudaFree(dev_morton_codes);
-    cudaFree(dev_hit_geom);
     cudaFree(dev_path_scatter_buf);
     cudaFree(dev_material_ids);
 
@@ -705,7 +703,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restric
     }
 }
 
-__global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegments, const Geom* mesh, uint32_t* morton_codes, bool* hit_geoms) {
+__global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegments, const Geom* mesh, uint32_t* morton_codes) {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (path_index < n)
@@ -728,10 +726,11 @@ __global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegm
         float scene_extent = glm::length(bbox.box_max - bbox.box_min);
 
         float t;
-        morton_codes[path_index] = rayMortonCode(r, scene_extent);
-        hit_geoms[path_index] = bbox.RayBoxInterection(r, t);
+        morton_codes[path_index] = bbox.RayBoxInterection(r, t)
+            ? rayMortonCode(r, scene_extent)
+            : MORTON_CODE_MISS;
     }
-} 
+}
 
 
 __global__ void drawBVH(
@@ -883,16 +882,18 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     CudaTimer cudaTimer;
 
-    PathSegment* dev_paths;
-    PathSegment* dev_paths_sorted;
+    PathSegment* dev_paths = dev_paths_A;
+    PathSegment* dev_paths_sorted = dev_paths_A;
 
     int last_num_paths = num_paths;
 
     bool iterationComplete = false;
     while (!iterationComplete)
-    { 
-        dev_paths = (depth % 2) == 0 ? dev_paths_A : dev_paths_B;
-        dev_paths_sorted = (depth % 2) == 1 ? dev_paths_A : dev_paths_B;
+    {
+        #if RAY_SORTING
+            dev_paths = (depth % 2) == 0 ? dev_paths_A : dev_paths_B;
+            dev_paths_sorted = (depth % 2) == 1 ? dev_paths_A : dev_paths_B;
+        #endif
 
         cudaTimer.record(fmt::format("Start, Iter {}", depth+1));
 
@@ -900,13 +901,13 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             exit(0);
         }
 
-        // clean shading chunks
-        cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
-        cudaMemset(dev_direct_light_intersections, 0, num_paths * sizeof(ShadeableIntersection));
-        cudaMemset(dev_environment_map_intersections, 0, num_paths * sizeof(ShadeableIntersection));
-        thrust::sequence(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths);
+        #if !OPTIX
+            cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+            cudaMemset(dev_direct_light_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+            cudaMemset(dev_environment_map_intersections, 0, num_paths * sizeof(ShadeableIntersection));
 
-        cudaTimer.record(fmt::format("Memset, Iter {}", depth+1));
+            cudaTimer.record(fmt::format("Memset, Iter {}", depth+1));
+        #endif
 
         dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
 
@@ -928,8 +929,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             thrust::partition(dPtr(dev_paths), dPtr(dev_paths) + num_paths, sort_rays(d_mesh));
 
             cudaTimer.record(fmt::format("Partition Mesh Hits, Iter {}", depth+1)); 
-        #elif 1
-            const Geom* d_mesh;
+        #elif RAY_SORTING
+            const Geom* d_mesh = nullptr;
             for (int i = 0; i < hst_scene->geoms.size(); i++) {
                 Geom &geom = hst_scene->geoms[i];
                 if (geom.type == GeomType::MESH) {
@@ -947,13 +948,13 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 num_paths,
                 dev_paths,
                 d_mesh,
-                dev_morton_codes,
-                dev_hit_geom
+                dev_morton_codes
             );
 
             cudaTimer.record(fmt::format("Morton Precompute, Iter {}", depth+1));
 
-            thrust::sort(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf + num_paths), sort_rays_morton(dev_morton_codes, dev_hit_geom));
+            thrust::sequence(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths);
+            thrust::sort_by_key(dPtr(dev_morton_codes), dPtr(dev_morton_codes + num_paths), dPtr(dev_path_scatter_buf));
             thrust::gather(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf + num_paths), dPtr(dev_paths), dPtr(dev_paths_sorted));
             thrust::copy(dPtr(dev_paths + num_paths), dPtr(dev_paths + last_num_paths), dPtr(dev_paths_sorted + num_paths));
 
