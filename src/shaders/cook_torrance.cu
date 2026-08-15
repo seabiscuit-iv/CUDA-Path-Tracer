@@ -10,7 +10,8 @@ namespace CookTorrance {
 
         float numerator = alpha_sq;
 
-        float n_dot_h_sq = glm::pow( CLAMP_POS(glm::dot(n, h)) , 2.0f);
+        float n_dot_h = CLAMP_POS(glm::dot(n, h));
+        float n_dot_h_sq = n_dot_h * n_dot_h;
         float denom_component = ( n_dot_h_sq * (alpha_sq - 1.0f) ) + 1.0f;
 
         float denominator = denom_component * denom_component * glm::pi<float>();
@@ -19,7 +20,9 @@ namespace CookTorrance {
     }
 
     __device__ glm::vec3 F_SchlickApprox(float v_dot_h, const glm::vec3& f0) {
-        return f0 + ( (glm::vec3(1.0f) - f0) * glm::pow( ( 1.0f - v_dot_h ), 5.0f ) );
+        float m = 1.0f - v_dot_h;
+        float m2 = m * m;
+        return f0 + ( (glm::vec3(1.0f) - f0) * (m2 * m2 * m) );
     }
 
     __device__ float Smith_GGX(glm::vec3 w, glm::vec3 n, float alpha) {
@@ -28,7 +31,7 @@ namespace CookTorrance {
 
         float numerator = 2.0f * n_dot_w;
 
-        float under_sqrt = alpha_sq + (1.0f - alpha_sq) * (glm::pow(n_dot_w, 2.0f));
+        float under_sqrt = alpha_sq + (1.0f - alpha_sq) * (n_dot_w * n_dot_w);
         float denominator = n_dot_w + glm::sqrt(under_sqrt);
 
         return numerator / glm::max(denominator, EPSILON);

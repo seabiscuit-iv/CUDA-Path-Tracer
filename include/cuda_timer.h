@@ -6,6 +6,16 @@
 #include <iostream>
 #include <iomanip>
 
+#include <fmt/core.h>
+
+#include "config.h"
+
+#if PROFILE
+    #define CUDA_TIMER_RECORD(timer, ...) (timer).record(fmt::format(__VA_ARGS__))
+#else
+    #define CUDA_TIMER_RECORD(timer, ...) ((void)0)
+#endif
+
 struct Event {
     std::string name;
     cudaEvent_t event;

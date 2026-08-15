@@ -200,7 +200,7 @@ void build_optix_accel_structure(
     OptixDeviceContext optix = get_optix();
 
     OptixAccelBuildOptions accel_options = {};
-    accel_options.buildFlags = OPTIX_BUILD_FLAG_NONE;
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE | OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     CUdeviceptr d_verts_cuptr = CUdeviceptr(d_verts);
@@ -239,6 +239,13 @@ void build_optix_accel_structure(
                 as_buffer_sizes.outputSizeInBytes
                 );
 
+    CUdeviceptr d_compacted_size;
+    cudaMalloc( reinterpret_cast<void**>( &d_compacted_size ), sizeof( size_t ) );
+
+    OptixAccelEmitDesc emit_property = {};
+    emit_property.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
+    emit_property.result = d_compacted_size;
+
     OPTIX_CHECK( optixAccelBuild(
                 optix,
                 0,                  // CUDA stream
@@ -250,11 +257,37 @@ void build_optix_accel_structure(
                 d_as_output_buffer,
                 as_buffer_sizes.outputSizeInBytes,
                 &as_handle,
-                nullptr,            // emitted property list
-                0                   // num emitted properties
+                &emit_property,     // emitted property list
+                1                   // num emitted properties
                 ) );
 
+    cudaDeviceSynchronize();
     cudaFree( reinterpret_cast<void*>( d_as_temp_buffer ) );
+
+    size_t compacted_size = 0;
+    cudaMemcpy( &compacted_size, reinterpret_cast<void*>( d_compacted_size ), sizeof( size_t ), cudaMemcpyDeviceToHost );
+    cudaFree( reinterpret_cast<void*>( d_compacted_size ) );
+
+    if ( compacted_size < as_buffer_sizes.outputSizeInBytes )
+    {
+        CUdeviceptr d_compacted_buffer;
+        cudaMalloc( reinterpret_cast<void**>( &d_compacted_buffer ), compacted_size );
+
+        OPTIX_CHECK( optixAccelCompact(
+                    optix,
+                    0,              // CUDA stream
+                    as_handle,
+                    d_compacted_buffer,
+                    compacted_size,
+                    &as_handle
+                    ) );
+
+        cudaDeviceSynchronize();
+
+        cudaFree( reinterpret_cast<void*>( d_as_output_buffer ) );
+        d_as_output_buffer = d_compacted_buffer;
+    }
+
     cudaDeviceSynchronize();
 
 }
