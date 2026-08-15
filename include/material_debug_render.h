@@ -8,6 +8,7 @@
 #include "config.h"
 
 __device__ void render_material_debug_mode (
+    const Material& material,
     PathSegment& path, 
     glm::vec3 materialColor, 
     glm::vec3 normal, 

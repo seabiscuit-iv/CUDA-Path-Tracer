@@ -297,7 +297,7 @@ void RenderImGui()
         changed |= ImGui::Checkbox("Debug BVH", &PathTracerOptions::Get()->debug_bvh);
     #endif
 
-    const char* material_debug_modes[4] = {"Off", "Albedo", "World Normal", "Normal Map"};
+    const char* material_debug_modes[6] = {"Off", "Albedo", "World Normal", "Normal Map", "Roughness", "Metallic"};
     changed |= ImGui::Combo("Material Debug Mode", &PathTracerOptions::Get()->material_debug_mode, material_debug_modes, IM_ARRAYSIZE(material_debug_modes));
 
     const bool material_debug_active = PathTracerOptions::Get()->material_debug_mode != 0;

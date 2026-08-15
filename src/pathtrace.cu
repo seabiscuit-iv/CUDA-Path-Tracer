@@ -446,6 +446,7 @@ __global__ void shadePath(
 
         if (DEV_OPTIONS.material_debug_mode != 0) {
             render_material_debug_mode(
+                material,
                 path,
                 materialColor,
                 normal,
