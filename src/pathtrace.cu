@@ -60,19 +60,21 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, g
         float invIter = __frcp_rn(iter);
 
         pix = pix * invIter;
-        
-        if (DEV_OPTIONS.color_mode == 0) {
-            pix = pix / (pix + glm::vec3(1.0f));
-        }
-        else if (DEV_OPTIONS.color_mode == 1) {
-            pix = AgX(pix);
-        }
-        else {
-            pix = ACESFilm(pix);
-        }
 
-        //gamma correction
-        pix = glm::pow(pix, glm::vec3(0.45f));
+        if (DEV_OPTIONS.material_debug_mode == 0) {
+            if (DEV_OPTIONS.color_mode == 0) {
+                pix = pix / (pix + glm::vec3(1.0f));
+            }
+            else if (DEV_OPTIONS.color_mode == 1) {
+                pix = AgX(pix);
+            }
+            else {
+                pix = ACESFilm(pix);
+            }
+
+            //gamma correction
+            pix = glm::pow(pix, glm::vec3(0.45f));
+        }
 
         glm::ivec3 color;
         color.x = glm::clamp((int)(pix.x * 255.0), 0, 255);
@@ -444,16 +446,10 @@ __global__ void shadePath(
 
         if (DEV_OPTIONS.material_debug_mode != 0) {
             render_material_debug_mode(
-                material,
                 path,
                 materialColor,
                 normal,
                 normal_map,
-                idx,
-                num_paths,
-                iter,
-                depth,
-                rng,
                 DEV_OPTIONS.material_debug_mode
             );
         }
@@ -861,7 +857,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
     // fmt::println("Offset 4: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
 
-    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 2 : hst_scene->state.traceDepth;
+    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 1 : hst_scene->state.traceDepth;
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
 

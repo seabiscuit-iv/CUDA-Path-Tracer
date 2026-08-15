@@ -300,8 +300,15 @@ void RenderImGui()
     const char* material_debug_modes[4] = {"Off", "Albedo", "World Normal", "Normal Map"};
     changed |= ImGui::Combo("Material Debug Mode", &PathTracerOptions::Get()->material_debug_mode, material_debug_modes, IM_ARRAYSIZE(material_debug_modes));
 
+    const bool material_debug_active = PathTracerOptions::Get()->material_debug_mode != 0;
+
     const char* color_modes[3] = {"Reinhard", "AgX", "ACES"};
+    ImGui::BeginDisabled(material_debug_active);
     changed |= ImGui::Combo("Tone Mapper", &PathTracerOptions::Get()->color_mode, color_modes, IM_ARRAYSIZE(color_modes));
+    ImGui::EndDisabled();
+    if (material_debug_active) {
+        ImGui::TextDisabled("Tone mapping disabled while a material debug view is active");
+    }
 
     changed |= ImGui::SliderFloat("Environment Map Intensity", &PathTracerOptions::Get()->envmap_intensity, 0.0f, 25.0f);
 

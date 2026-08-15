@@ -60,6 +60,7 @@ __device__ glm::vec3 get_normal(const Material& material, const TextureData* tex
         return glm::normalize(TBN * local_normal);
     }
     else {
+        *out_normal_map = glm::vec3(0.5f, 0.5f, 1.0f);
         return intersection.surfaceNormal;
     }
 }
