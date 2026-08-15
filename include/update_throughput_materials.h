@@ -19,5 +19,7 @@ __device__ void update_throughput_materials (
     thrust::default_random_engine& rng,
     glm::vec3 materialColor,
     glm::vec3 normal,
+    float roughness,
+    float metallic,
     bool is_specular
 );

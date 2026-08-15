@@ -18,5 +18,7 @@ __device__ void sample_materials(
     int depth,
     thrust::default_random_engine& rng,
     glm::vec3 materialColor,
-    glm::vec3 normal
+    glm::vec3 normal,
+    float roughness,
+    float metallic
 );

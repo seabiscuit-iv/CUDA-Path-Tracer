@@ -98,10 +98,13 @@ struct Material
     float metallic = 0.0f;
     float alpha = 1.0f;
     int normal_tex;
+    int metallic_roughness_tex = -1;
 
     TextureTransform albedo_tex_transform;
 
     TextureTransform normal_tex_transform;
+
+    TextureTransform metallic_roughness_tex_transform;
 };
 
 struct Camera

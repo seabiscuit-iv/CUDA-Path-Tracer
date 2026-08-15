@@ -27,6 +27,36 @@
 using namespace std;
 using json = nlohmann::json;
 
+static void parse_texture_transform(const tinygltf::ExtensionMap& extensions, TextureTransform& out)
+{
+    auto it = extensions.find("KHR_texture_transform");
+    if (it == extensions.end()) {
+        return;
+    }
+
+    const auto& ext = it->second;
+
+    if (ext.Has("offset")) {
+        const auto& o = ext.Get("offset").Get<tinygltf::Value::Array>();
+        out.offset = glm::vec2{
+            float(o[0].Get<double>()),
+            float(o[1].Get<double>())
+        };
+    }
+
+    if (ext.Has("scale")) {
+        const auto& s = ext.Get("scale").Get<tinygltf::Value::Array>();
+        out.scale = glm::vec2{
+            float(s[0].Get<double>()),
+            float(s[1].Get<double>())
+        };
+    }
+
+    if (ext.Has("rotation")) {
+        out.rotation = float(ext.Get("rotation").Get<double>());
+    }
+}
+
 Scene::Scene(string filename, const char* env_map_path)
 {
     cout << "Reading scene from " << filename << " ..." << endl;
@@ -337,6 +367,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
         }
         newMaterial.metallic = mat.pbrMetallicRoughness.metallicFactor;
         newMaterial.roughness = mat.pbrMetallicRoughness.roughnessFactor;
+        newMaterial.metallic_roughness_tex = mat.pbrMetallicRoughness.metallicRoughnessTexture.index;
 
         float emissive_strength = 1.0f;
         if (mat.extensions.find("KHR_materials_emissive_strength") != mat.extensions.end()) {
@@ -356,6 +387,9 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
             newMaterial.material_type = MaterialType::Glass;
             newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
         }
+        else if (newMaterial.metallic_roughness_tex >= 0) {
+            newMaterial.material_type = MaterialType::Microfacet;
+        }
         else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
             newMaterial.material_type = MaterialType::Diffuse;
         }
@@ -365,54 +399,12 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
         auto& albedo_tex_info = newMaterial.material_type == MaterialType::Emissive ? mat.emissiveTexture : mat.pbrMetallicRoughness.baseColorTexture;
         newMaterial.albedo_tex = albedo_tex_info.index;
-        if (albedo_tex_info.extensions.find("KHR_texture_transform") != albedo_tex_info.extensions.end()) {
-            auto& ext = albedo_tex_info.extensions.at("KHR_texture_transform");
-            
-            if (ext.Has("offset")) {
-                const auto& o = ext.Get("offset").Get<tinygltf::Value::Array>();
-                newMaterial.albedo_tex_transform.offset = glm::vec2{
-                    float(o[0].Get<double>()),
-                    float(o[1].Get<double>())
-                };
-            }
-
-            if (ext.Has("scale")) {
-                const auto& s = ext.Get("scale").Get<tinygltf::Value::Array>();
-                newMaterial.albedo_tex_transform.scale = glm::vec2{
-                    float(s[0].Get<double>()),
-                    float(s[1].Get<double>())
-                };
-            }
-
-            if (ext.Has("rotation")) {
-                newMaterial.albedo_tex_transform.rotation = float(ext.Get("rotation").Get<double>());
-            }
-        }
+        parse_texture_transform(albedo_tex_info.extensions, newMaterial.albedo_tex_transform);
 
         newMaterial.normal_tex = mat.normalTexture.index;
-        if (mat.normalTexture.extensions.find("KHR_texture_transform") != mat.normalTexture.extensions.end()) {
-            auto& ext = mat.normalTexture.extensions.at("KHR_texture_transform");
-            
-            if (ext.Has("offset")) {
-                const auto& o = ext.Get("offset").Get<tinygltf::Value::Array>();
-                newMaterial.normal_tex_transform.offset = glm::vec2{
-                    float(o[0].Get<double>()),
-                    float(o[1].Get<double>())
-                };
-            }
+        parse_texture_transform(mat.normalTexture.extensions, newMaterial.normal_tex_transform);
 
-            if (ext.Has("scale")) {
-                const auto& s = ext.Get("scale").Get<tinygltf::Value::Array>();
-                newMaterial.normal_tex_transform.scale = glm::vec2{
-                    float(s[0].Get<double>()),
-                    float(s[1].Get<double>())
-                };
-            }
-
-            if (ext.Has("rotation")) {
-                newMaterial.normal_tex_transform.rotation = float(ext.Get("rotation").Get<double>());
-            }
-        }
+        parse_texture_transform(mat.pbrMetallicRoughness.metallicRoughnessTexture.extensions, newMaterial.metallic_roughness_tex_transform);
 
 
         materials.push_back(newMaterial);

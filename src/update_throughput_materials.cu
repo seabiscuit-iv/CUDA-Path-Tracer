@@ -15,6 +15,8 @@ __device__ void update_throughput_materials (
     thrust::default_random_engine& rng,
     glm::vec3 materialColor,
     glm::vec3 normal,
+    float roughness,
+    float metallic,
     bool is_specular
 ) {
     if (material.material_type == MaterialType::Diffuse) {
@@ -28,8 +30,8 @@ __device__ void update_throughput_materials (
         path.last_pdf = 1.0;
     }
     else if (material.material_type == MaterialType::Microfacet) {
-        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, material, materialColor, normal, path.sample_dir);
-        float pdf = CookTorrance::PDF(material, -path.ray.direction, path.sample_dir, normal, material.roughness, materialColor);
+        glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, materialColor, normal, path.sample_dir, roughness, metallic);
+        float pdf = CookTorrance::PDF(-path.ray.direction, path.sample_dir, normal, roughness, metallic, materialColor);
         path.throughput *= cook_torrance / pdf;
         path.last_pdf = pdf;
     }

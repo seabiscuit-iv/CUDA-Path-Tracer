@@ -1,20 +1,24 @@
 #include "material_queries.h"
 
+__device__ glm::vec2 apply_texture_transform(glm::vec2 uv, const TextureTransform& transform) {
+    uv *= transform.scale;
+
+    if(transform.rotation) {
+        float c = cosf(transform.rotation);
+        float s = sinf(transform.rotation);
+
+        uv = glm::vec2 (
+            c * uv.x - s * uv.y,
+            s * uv.x + c * uv.y
+        );
+    }
+
+    return uv + transform.offset;
+}
+
 __device__ glm::vec3 get_albedo(const Material& material, glm::vec2 uv, const TextureData* textures) {
     if(material.albedo_tex >= 0) {
-        uv *= material.albedo_tex_transform.scale;
-        
-        if(material.albedo_tex_transform.rotation) {
-            float c = cosf(material.albedo_tex_transform.rotation);
-            float s = sinf(material.albedo_tex_transform.rotation);
-
-            uv = glm::vec2 (
-                c * uv.x - s * uv.y,
-                s * uv.x + c * uv.y
-            );
-        }
-
-        uv += material.albedo_tex_transform.offset;
+        uv = apply_texture_transform(uv, material.albedo_tex_transform);
 
         float4 tex = tex2D<float4>(textures[material.albedo_tex].tex, uv.x, uv.y);
         return glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
@@ -27,22 +31,7 @@ __device__ glm::vec3 get_albedo(const Material& material, glm::vec2 uv, const Te
 
 __device__ glm::vec3 get_normal(const Material& material, const TextureData* textures, const ShadeableIntersection& intersection, glm::vec3* out_normal_map) {
     if (material.normal_tex >= 0) {
-        glm::vec2 uv = intersection.uvs;
-
-        uv *= material.normal_tex_transform.scale;
-        
-        if(material.normal_tex_transform.rotation) {
-            float c = cosf(material.normal_tex_transform.rotation);
-            float s = sinf(material.normal_tex_transform.rotation);
-
-            uv = glm::vec2 (
-                c * uv.x - s * uv.y,
-                s * uv.x + c * uv.y
-            );
-        }
-
-        uv += material.normal_tex_transform.offset;
-
+        glm::vec2 uv = apply_texture_transform(intersection.uvs, material.normal_tex_transform);
 
         float4 tex = tex2D<float4>(textures[material.normal_tex].tex, uv.x, uv.y);
         glm::vec3 local_normal = glm::vec3(tex.x, tex.y, tex.z);
@@ -63,4 +52,21 @@ __device__ glm::vec3 get_normal(const Material& material, const TextureData* tex
         *out_normal_map = glm::vec3(0.5f, 0.5f, 1.0f);
         return intersection.surfaceNormal;
     }
+}
+
+
+__device__ glm::vec2 get_metallic_roughness(const Material& material, glm::vec2 uv, const TextureData* textures) {
+    float roughness = material.roughness;
+    float metallic = material.metallic;
+
+    if (material.metallic_roughness_tex >= 0) {
+        uv = apply_texture_transform(uv, material.metallic_roughness_tex_transform);
+
+        float4 tex = tex2D<float4>(textures[material.metallic_roughness_tex].tex, uv.x, uv.y);
+
+        roughness *= tex.y;
+        metallic *= tex.z;
+    }
+
+    return glm::vec2(roughness, metallic);
 }

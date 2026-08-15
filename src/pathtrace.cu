@@ -442,15 +442,20 @@ __global__ void shadePath(
         glm::vec3 normal_map;
         glm::vec3 normal = get_normal(material, textures, intersection, &normal_map);
 
+        glm::vec2 metallic_roughness = get_metallic_roughness(material, intersection.uvs, textures);
+        float roughness = metallic_roughness.x;
+        float metallic = metallic_roughness.y;
+
         bool is_specular = (material.material_type == MaterialType::Specular || material.material_type == MaterialType::Glass);
 
         if (DEV_OPTIONS.material_debug_mode != 0) {
             render_material_debug_mode(
-                material,
                 path,
                 materialColor,
                 normal,
                 normal_map,
+                roughness,
+                metallic,
                 DEV_OPTIONS.material_debug_mode
             );
         }
@@ -465,7 +470,9 @@ __global__ void shadePath(
                 depth,
                 rng,
                 materialColor,
-                normal
+                normal,
+                roughness,
+                metallic
             );
 
             if (DEV_OPTIONS.environment_map_importance_sampling) {
@@ -494,7 +501,7 @@ __global__ void shadePath(
                             pdf_bsdf_of_env = Lambert::PDF(env_dir, normal);
                         }
                         else if (material.material_type == MaterialType::Microfacet) {
-                            pdf_bsdf_of_env = CookTorrance::PDF(material, -path.ray.direction, env_dir, normal, material.roughness, materialColor);
+                            pdf_bsdf_of_env = CookTorrance::PDF(-path.ray.direction, env_dir, normal, roughness, metallic, materialColor);
                         }
 
                         pdf_env_of_env = envmap_pdf(env_dir, marginal_cdf, conditional_cdfs, exr_width, exr_height);
@@ -506,7 +513,7 @@ __global__ void shadePath(
                             brdf = materialColor / PI;
                         }
                         else if (material.material_type == MaterialType::Microfacet) {
-                            brdf = CookTorrance::BRDF(-path.ray.direction, normal, env_dir, materialColor, material.roughness, material.metallic);
+                            brdf = CookTorrance::BRDF(-path.ray.direction, normal, env_dir, materialColor, roughness, metallic);
                         }
 
                         glm::vec3 d = glm::normalize(env_dir);
@@ -576,7 +583,7 @@ __global__ void shadePath(
                                 pdf_bsdf = Lambert::PDF(light_dir, normal);
                             }
                             else if (material.material_type == MaterialType::Microfacet) {
-                                pdf_bsdf = CookTorrance::PDF(material, -path.ray.direction, light_dir, normal, material.roughness, materialColor);
+                                pdf_bsdf = CookTorrance::PDF(-path.ray.direction, light_dir, normal, roughness, metallic, materialColor);
                             }
 
                             float mis_weight = (pdf_dl_sa * pdf_dl_sa) / (pdf_dl_sa * pdf_dl_sa + pdf_bsdf * pdf_bsdf);
@@ -586,7 +593,7 @@ __global__ void shadePath(
                                 brdf = materialColor / PI;
                             }
                             else if (material.material_type == MaterialType::Microfacet) {
-                                brdf = CookTorrance::BRDF(-path.ray.direction, normal, light_dir, materialColor, material.roughness, material.metallic);
+                                brdf = CookTorrance::BRDF(-path.ray.direction, normal, light_dir, materialColor, roughness, metallic);
                             }
 
                             int light_id = direct_light_intersection.materialId;
@@ -638,6 +645,8 @@ __global__ void shadePath(
                     rng,
                     materialColor,
                     normal,
+                    roughness,
+                    metallic,
                     is_specular
                 );
             }

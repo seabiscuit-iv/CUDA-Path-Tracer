@@ -107,12 +107,12 @@ namespace CookTorrance {
         path.sample_dir = wi;
     }
 
-    __device__ void sampleCookTorrance(PathSegment &path, const Material &material, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, thrust::default_random_engine &rng, glm::vec3 color) {
+    __device__ void sampleCookTorrance(PathSegment &path, int idx, int iter, int depth, glm::vec3 wo, glm::vec3 n, float roughness, float metallic, thrust::default_random_engine &rng, glm::vec3 color) {
         thrust::uniform_real_distribution<float> u01(0, 1);
         float r = u01(rng);
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
-        glm::vec3 F0 = glm::mix(dielectricF0, color, material.metallic);
+        glm::vec3 F0 = glm::mix(dielectricF0, color, metallic);
         float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.01f, 0.99f);
 
         if (r <= probSpecular) {
@@ -139,12 +139,12 @@ namespace CookTorrance {
     }  
 
     
-    __device__ float PDF(const Material &material, glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness, glm::vec3 color) {
+    __device__ float PDF(glm::vec3 wo, glm::vec3 wi, glm::vec3 n, float roughness, float metallic, glm::vec3 color) {
         float pdfDiffuse  = max(0.0f, glm::dot(wi, n)) * INV_PI;
         float pdfSpecular = PDF_GGX(wo, wi, n, roughness);
 
         glm::vec3 dielectricF0 = glm::vec3(0.04f);
-        glm::vec3 F0 = glm::mix(dielectricF0, color, material.metallic);
+        glm::vec3 F0 = glm::mix(dielectricF0, color, metallic);
         float probSpecular = glm::clamp(F_SchlickApprox(glm::dot(wo, n), glm::vec3(F0)).r, 0.01f, 0.99f);
 
         float pdf = (1.0f - probSpecular) * pdfDiffuse + probSpecular * pdfSpecular;
@@ -154,16 +154,14 @@ namespace CookTorrance {
     
     __device__ glm::vec3 shadePathCookTorrance(
         PathSegment &path,
-        const Material &material,
         glm::vec3 albedo,
         glm::vec3 normal,
-        glm::vec3 wi
+        glm::vec3 wi,
+        float roughness,
+        float metallic
     )
     {
         glm::vec3 wo = -path.ray.direction;
-
-        float roughness = material.roughness;
-        float metallic = material.metallic;
 
         glm::vec3 brdf = BRDF(wo, normal, wi, albedo, roughness, metallic);
 
