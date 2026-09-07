@@ -109,6 +109,7 @@ struct Mesh {
 
     bool h_valid = false;
     bool d_valid = false;
+    bool d_is_copy = false;
     bool has_normal_buffers = false;
     bool has_uvs = false;
     bool has_triangle_area_percentage_prefix = false;

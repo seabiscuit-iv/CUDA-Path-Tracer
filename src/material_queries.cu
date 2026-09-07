@@ -42,11 +42,42 @@ __device__ glm::vec3 get_normal(const Material& material, const TextureData* tex
         local_normal.y = local_normal.g * 2.0f - 1.0f;
         local_normal.z = local_normal.b * 2.0f - 1.0f;
 
-        glm::vec3 bitangent = glm::normalize(glm::cross(intersection.surfaceTangent, intersection.surfaceNormal));
+        const glm::vec3 N = intersection.surfaceNormal;
 
-        glm::mat3 TBN = glm::mat3(intersection.surfaceTangent, bitangent, intersection.surfaceNormal);
+        // fallback for bad normal
+        float local_len2 = glm::dot(local_normal, local_normal);
+        if (!(local_len2 > 1e-12f)) {
+            return N;
+        }
 
-        return glm::normalize(TBN * local_normal);
+        // forcing the tangent to be orthogonal
+
+        // tangent zero guard 
+        glm::vec3 T = intersection.surfaceTangent - glm::dot(intersection.surfaceTangent, N) * N;
+        float t_len2 = glm::dot(T, T);
+        if (!(t_len2 > 1e-12f)) {
+            return N;
+        }
+        T *= glm::inversesqrt(t_len2);
+
+        glm::vec3 bitangent = glm::cross(N, T);
+
+        glm::mat3 TBN = glm::mat3(T, bitangent, N);
+
+        // bad local normal guard
+        glm::vec3 mapped = TBN * local_normal;
+        float mapped_len2 = glm::dot(mapped, mapped);
+        if (!(mapped_len2 > 1e-12f)) {
+            return N;
+        }
+        mapped *= glm::inversesqrt(mapped_len2);
+
+        // another normal guard (mapped normal not same dir as world normal)
+        if (!(glm::dot(mapped, N) > 1e-4f)) {
+            return N;
+        }
+
+        return mapped;
     }
     else {
         *out_normal_map = glm::vec3(0.5f, 0.5f, 1.0f);

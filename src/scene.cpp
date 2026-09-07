@@ -328,7 +328,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
     for (auto& tex : model.textures) {
         int img_index = tex.source;
-        tinygltf::Image img = model.images[img_index];
+        const tinygltf::Image& img = model.images[img_index];
 
         int width = img.width;
         int height = img.height;
@@ -339,17 +339,46 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
             exit(1);
         }
 
-        fmt::println("Loading {} x {} texture of {} bytes", img.width, img.height, img.image.size());
+        if (img.bits != 8 && img.bits != 16) {
+            fmt::println("No support yet for {} bit images", img.bits);
+            exit(1);
+        }
 
-        std::vector<glm::vec4> data;
+        size_t texel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
+        size_t expected_bytes = texel_count * 4 * (img.bits / 8);
 
-        for (int i = 0; i < width * height; i++) {
-            data.push_back(glm::vec4(
-                ((float)img.image[4 * i]) / 255.0f,
-                ((float)img.image[4 * i + 1]) / 255.0f,
-                ((float)img.image[4 * i + 2]) / 255.0f,
-                ((float)img.image[4 * i + 3]) / 255.0f
-            ));
+        if (img.image.size() < expected_bytes) {
+            fmt::println("Image {} has {} bytes, expected {}", img_index, img.image.size(), expected_bytes);
+            exit(1);
+        }
+
+        fmt::println("Loading {} x {} texture of {} bytes ({} bpc)", img.width, img.height, img.image.size(), img.bits);
+
+        std::vector<glm::vec4> data(texel_count);
+
+        if (img.bits == 16) {
+            const uint16_t* src = reinterpret_cast<const uint16_t*>(img.image.data());
+
+            for (size_t i = 0; i < texel_count; i++) {
+                data[i] = glm::vec4(
+                    ((float)src[4 * i]) / 65535.0f,
+                    ((float)src[4 * i + 1]) / 65535.0f,
+                    ((float)src[4 * i + 2]) / 65535.0f,
+                    ((float)src[4 * i + 3]) / 65535.0f
+                );
+            }
+        }
+        else {
+            const uint8_t* src = img.image.data();
+
+            for (size_t i = 0; i < texel_count; i++) {
+                data[i] = glm::vec4(
+                    ((float)src[4 * i]) / 255.0f,
+                    ((float)src[4 * i + 1]) / 255.0f,
+                    ((float)src[4 * i + 2]) / 255.0f,
+                    ((float)src[4 * i + 3]) / 255.0f
+                );
+            }
         }
 
         TextureHandler::get().load_texture(data, width, height);
@@ -461,7 +490,8 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
         if (node.mesh >= 0) {
             const auto& mesh = model.meshes[node.mesh];
-            for (const auto& prim : mesh.primitives) {
+            for (size_t prim_idx = 0; prim_idx < mesh.primitives.size(); prim_idx++) {
+                const auto& prim = mesh.primitives[prim_idx];
                 if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
                     fmt::println("WARNING: Mesh {} attempted to create a non-triangle mode primitive", mesh.name);
                     continue;
@@ -587,7 +617,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
                 }
 
                 new_geom.mesh.make_mesh_host(vertices, indices, normals, indices, uvs, indices);
-                new_geom.mesh.label = mesh.name;
+                new_geom.mesh.label = fmt::format("{}#{}#{}", node.mesh, prim_idx, mesh.name);
                 new_geom.transform = global_transform;
                 new_geom.inverseTransform = glm::inverse(global_transform);
                 new_geom.invTranspose = glm::inverseTranspose(global_transform);

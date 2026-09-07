@@ -682,6 +682,14 @@ __global__ void shadePath(
         Ray& ray = path.ray;
         glm::vec3 hit_point = getPointOnRay(ray, intersection.t);
         glm::vec3 normal = intersection.surfaceNormal;
+
+        // Guard for paths
+        float sample_len2 = glm::dot(path.sample_dir, path.sample_dir);
+        if (!(sample_len2 > 1e-12f) || !isfinite(sample_len2)) {
+            path.kill = true;
+            return;
+        }
+
         ray.direction = path.sample_dir;
 
         float eps = 1e-4f;
