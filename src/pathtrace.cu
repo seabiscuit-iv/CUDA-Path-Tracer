@@ -543,7 +543,7 @@ __global__ void shadePath(
                         float pdf_bsdf = path.last_pdf;
 
                         float dist_sq = intersection.t * intersection.t;
-                        float cosThetaLight = glm::dot(normal, -path.ray.direction);
+                        float cosThetaLight = glm::dot(intersection.surfaceNormal, -path.ray.direction);
 
                         if (cosThetaLight > 0.0001f) {
                             float pdf_dl_area = 1.0f / total_emissive_mesh_area;

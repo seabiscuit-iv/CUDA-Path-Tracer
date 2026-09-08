@@ -26,7 +26,7 @@ __device__ void sample_materials(
         PerfectSpecular::sampleMirror(path, normal);
     }
     else if (material.material_type == MaterialType::Microfacet) {
-        CookTorrance::sampleCookTorrance(path, idx, iter, depth, -path.ray.direction, intersection.surfaceNormal, roughness, metallic, rng, materialColor);
+        CookTorrance::sampleCookTorrance(path, idx, iter, depth, -path.ray.direction, normal, roughness, metallic, rng, materialColor);
     }
     else if (material.material_type == MaterialType::Glass) {
         TransmissiveGlass::sampleGlass(path, material, rng, normal);
