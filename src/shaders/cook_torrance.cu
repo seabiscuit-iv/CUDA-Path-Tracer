@@ -1,6 +1,6 @@
 #include "shaders/cook_torrance.h"
 
-#define EPSILON 1e-12f
+#define EPSILON 1e-30f
 #define PDF_CLAMP 1e-5f
 
 namespace CookTorrance {
@@ -12,7 +12,7 @@ namespace CookTorrance {
 
         float n_dot_h = CLAMP_POS(glm::dot(n, h));
         float n_dot_h_sq = n_dot_h * n_dot_h;
-        float denom_component = ( n_dot_h_sq * (alpha_sq - 1.0f) ) + 1.0f;
+        float denom_component = ( n_dot_h_sq * alpha_sq ) + ( 1.0f - n_dot_h_sq );
 
         float denominator = denom_component * denom_component * glm::pi<float>();
 
