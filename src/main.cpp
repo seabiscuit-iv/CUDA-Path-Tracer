@@ -26,6 +26,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <glm/gtc/type_ptr.hpp>
 
 static std::string startTimeString;
 
@@ -288,6 +289,9 @@ void RenderImGui()
 
     ImGui::Begin("Path Tracer Analytics");
 
+    ImGuiIO& io = ImGui::GetIO();
+    io.FontGlobalScale = 1.2f;
+
     bool changed = false;
 
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -320,9 +324,25 @@ void RenderImGui()
         changed |= ImGui::Checkbox("Environment Map Importance Sampling (MIS)", &PathTracerOptions::Get()->environment_map_importance_sampling);
     }
 
+    auto material_select_getter = [](void* data, int idx, const char** out_text) -> bool {
+        auto& vec = *static_cast<std::vector<std::string>*>(data);
+        if (idx < 0 || idx >= (int)vec.size()) {
+            return false;
+        }
+        *out_text = vec[idx].c_str();
+        return true;
+    };
+
+    changed |= ImGui::Combo("Material Select", &PathTracerOptions::Get()->selected_material, material_select_getter, &scene->material_names, (int)scene->material_names.size());
+
+    changed |= ImGui::ColorEdit3("RGB", glm::value_ptr(scene->materials[PathTracerOptions::Get()->selected_material].color));
+    changed |= ImGui::SliderFloat("Roughness", &scene->materials[PathTracerOptions::Get()->selected_material].roughness, 0.0f, 1.0f);
+    changed |= ImGui::SliderFloat("Metallic", &scene->materials[PathTracerOptions::Get()->selected_material].metallic, 0.0f, 1.0f);
+
     ImGui::End();
 
     if (changed) {
+        scene->precompute_emissive_mesh_area();
         camchanged = true;
     }
 

@@ -130,6 +130,7 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
         }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
+        material_names.push_back(name);
     }
     const auto& objectsData = data["Objects"];
     
@@ -324,7 +325,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     defaultMat.color = glm::vec3(0.5f);
     defaultMat.material_type = MaterialType::Diffuse;
     materials.push_back(defaultMat);
-    
+    material_names.push_back("Default Material");
 
     for (auto& tex : model.textures) {
         int img_index = tex.source;
@@ -437,6 +438,7 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
 
         materials.push_back(newMaterial);
+        material_names.push_back(mat.name);
         // fmt::println("New Material {} with RGB {} of type {} at index {} and has texture {}", mat.name, glm::to_string(newMaterial.color), (int)newMaterial.material_type, materials.size() - 1, newMaterial.albedo_tex >= 0);
     }
 
@@ -728,7 +730,6 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
 
 
 void Scene::precompute_emissive_mesh_area() {
-    fmt::println("Beginning Mesh Area Precompute");
     float emissive_area = 0.0f;
     int i = 0;
 
@@ -775,8 +776,6 @@ void Scene::precompute_emissive_mesh_area() {
     }
 
     total_emissive_mesh_area = emissive_area;
-
-    fmt::println("End Mesh Area Precompute");
 }
 
 

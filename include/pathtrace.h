@@ -20,6 +20,7 @@ struct PathTracerOptions {
     float envmap_intensity = 1.0f;
     bool direct_light_sampling = false;
     bool environment_map_importance_sampling = false;
+    int selected_material = 0;
 
     static PathTracerOptions* Get() {
         static PathTracerOptions instance;

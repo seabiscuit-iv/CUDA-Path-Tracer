@@ -12,14 +12,14 @@ class Scene
 private:
     void loadFromJSON(const std::string& jsonName, std::string env_map_path);
     void loadFromGLTF(const std::string& gltfName, std::string env_map_path);
-    void precompute_emissive_mesh_area();
-    void precompute_hdri_emission();
 public:
     Scene(std::string filename, const char* env_map);
 
     std::vector<Geom> geoms;
-    std::vector<Material> materials;
     RenderState state;
+
+    std::vector<Material> materials;
+    std::vector<std::string> material_names;
 
     std::vector<glm::vec4> exr_data;
     int exr_width;
@@ -38,6 +38,9 @@ public:
     float total_hdri_emission;
     std::vector<float> hdri_marginal_cdf; // size == exr_height
     std::vector<float> hdri_conditional_cdfs; // size == exr_width * exr_height
+
+    void precompute_emissive_mesh_area();
+    void precompute_hdri_emission();
 };
 
 
