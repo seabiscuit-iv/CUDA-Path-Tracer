@@ -2,6 +2,7 @@
 
 #include <cuda_runtime.h>
 
+#include "config.h"
 #include "glm/glm.hpp"
 #include "mesh.h"
 
@@ -18,11 +19,15 @@ enum GeomType
 };
 
 enum MaterialType {
+#if UBER_SHADER
+    Microfacet
+#else
     Diffuse = 0, // lambertian perfect diffuse
     Specular, // perfectly specular
     Emissive,
     Microfacet,
     Glass
+#endif
 };
 
 
@@ -93,7 +98,18 @@ struct Material
     float hasReflective;
     float hasRefractive;
     float indexOfRefraction;
+
+#if UBER_SHADER
+    struct {
+        float emission_strength = 0.0f;
+        glm::vec3 emission_color;
+        int emissive_tex = -1;
+        TextureTransform emissive_tex_transform;
+    } emission;
+#else
     float emittance;
+#endif
+
     float roughness = 0.0f;
     float metallic = 0.0f;
     float alpha = 1.0f;

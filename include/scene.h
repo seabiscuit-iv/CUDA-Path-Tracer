@@ -10,7 +10,11 @@
 class Scene
 {
 private:
+
+#if LOAD_FROM_JSON
     void loadFromJSON(const std::string& jsonName, std::string env_map_path);
+#endif
+
     void loadFromGLTF(const std::string& gltfName, std::string env_map_path);
 public:
     Scene(std::string filename, const char* env_map);

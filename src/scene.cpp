@@ -67,7 +67,12 @@ Scene::Scene(string filename, const char* env_map_path)
     auto ext = filename.substr(filename.find_last_of('.'));
     if (ext == ".json")
     {
-        loadFromJSON(filename, env_map_path ? std::string(env_map_path) : std::string());
+        #if LOAD_FROM_JSON
+            loadFromJSON(filename, env_map_path ? std::string(env_map_path) : std::string());
+        #else
+            fmt::println("JSON Model Loading has been deprecated (config.h)");
+            exit(1);
+        #endif
         return;
     }
     else if (ext == ".glb") {
@@ -81,6 +86,7 @@ Scene::Scene(string filename, const char* env_map_path)
     }
 }
 
+#if LOAD_FROM_JSON
 void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
 {
     std::ifstream f(jsonName);
@@ -97,20 +103,29 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
         {
             const auto& col = p["RGB"];
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.material_type = MaterialType::Diffuse;
+            #if !UBER_SHADER
+                newMaterial.material_type = MaterialType::Diffuse;
+            #endif
         }
         else if (p["TYPE"] == "Emitting")
         {
             const auto& col = p["RGB"];
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.emittance = p["EMITTANCE"];
-            newMaterial.material_type = MaterialType::Emissive;
+            #if UBER_SHADER
+                newMaterial.emission.emission_color = glm::vec3(col[0], col[1], col[2]);
+                newMaterial.emission.emission_strength = p["EMITTANCE"];
+            #else
+                newMaterial.emittance = p["EMITTANCE"];
+                newMaterial.material_type = MaterialType::Emissive;
+            #endif
         }
         else if (p["TYPE"] == "Specular")
         {
             const auto& col = p["RGB"];
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.material_type = MaterialType::Specular;
+            #if !UBER_SHADER
+                newMaterial.material_type = MaterialType::Specular;
+            #endif
         }
         else if (p["TYPE"] == "Microfacet")
         {
@@ -126,8 +141,13 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
         {
             const auto& col = p["RGB"];
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.material_type = MaterialType::Glass;
+            #if !UBER_SHADER
+                newMaterial.material_type = MaterialType::Glass;
+            #endif
         }
+        #if UBER_SHADER
+            newMaterial.material_type = MaterialType::Microfacet;
+        #endif
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
         material_names.push_back(name);
@@ -294,6 +314,7 @@ void Scene::loadFromJSON(const std::string& jsonName, std::string exr_path)
     precompute_emissive_mesh_area();
     precompute_hdri_emission();
 }
+#endif
 
 
 
@@ -322,8 +343,8 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
     }
 
     Material defaultMat{};
-    defaultMat.color = glm::vec3(0.5f);
-    defaultMat.material_type = MaterialType::Diffuse;
+    defaultMat.color = glm::vec3(1.0, 0.0, 0.0f); // Straight Red
+    defaultMat.material_type = MaterialType::Microfacet;
     materials.push_back(defaultMat);
     material_names.push_back("Default Material");
 
@@ -407,27 +428,39 @@ void Scene::loadFromGLTF(const std::string& gltfName, std::string exr_path) {
                 emissive_strength = static_cast<float>(ext.Get("emissiveStrength").GetNumberAsDouble());
             }
         }
-        newMaterial.emittance = emissive_strength * glm::length(glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]));
 
-        if (newMaterial.emittance > 0.01f) {
-            newMaterial.material_type = MaterialType::Emissive;
-            newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
-        }
-        else if (isGlass(mat) && newMaterial.metallic < 0.01f && newMaterial.roughness < 0.01f) {
-            newMaterial.material_type = MaterialType::Glass;
-            newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
-        }
-        else if (newMaterial.metallic_roughness_tex >= 0) {
-            newMaterial.material_type = MaterialType::Microfacet;
-        }
-        else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
-            newMaterial.material_type = MaterialType::Diffuse;
-        }
-        else {
-            newMaterial.material_type = MaterialType::Microfacet;
-        }
+        #if UBER_SHADER
+            newMaterial.emission.emission_strength = emissive_strength;
+            newMaterial.emission.emission_color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
+            newMaterial.emission.emissive_tex = mat.emissiveTexture.index;
+            parse_texture_transform(mat.emissiveTexture.extensions, newMaterial.emission.emissive_tex_transform);
 
-        auto& albedo_tex_info = newMaterial.material_type == MaterialType::Emissive ? mat.emissiveTexture : mat.pbrMetallicRoughness.baseColorTexture;
+            newMaterial.material_type = MaterialType::Microfacet;
+            auto& albedo_tex_info = mat.pbrMetallicRoughness.baseColorTexture;
+        #else
+            newMaterial.emittance = emissive_strength * glm::length(glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]));
+
+            if (newMaterial.emittance > 0.01f) {
+                newMaterial.material_type = MaterialType::Emissive;
+                newMaterial.color = glm::vec3(mat.emissiveFactor[0], mat.emissiveFactor[1], mat.emissiveFactor[2]);
+            }
+            else if (isGlass(mat) && newMaterial.metallic < 0.01f && newMaterial.roughness < 0.01f) {
+                newMaterial.material_type = MaterialType::Glass;
+                newMaterial.alpha = static_cast<float>(mat.pbrMetallicRoughness.baseColorFactor[3]);
+            }
+            else if (newMaterial.metallic_roughness_tex >= 0) {
+                newMaterial.material_type = MaterialType::Microfacet;
+            }
+            else if (newMaterial.metallic < 0.01f && newMaterial.roughness > 0.99f) {
+                newMaterial.material_type = MaterialType::Microfacet;
+            }
+            else {
+                newMaterial.material_type = MaterialType::Microfacet;
+            }
+
+            auto& albedo_tex_info = newMaterial.material_type == MaterialType::Emissive ? mat.emissiveTexture : mat.pbrMetallicRoughness.baseColorTexture;
+        #endif
+        
         newMaterial.albedo_tex = albedo_tex_info.index;
         parse_texture_transform(albedo_tex_info.extensions, newMaterial.albedo_tex_transform);
 
@@ -761,7 +794,11 @@ void Scene::precompute_emissive_mesh_area() {
             geom.mesh.h_triangle_area_percentage_prefix[k] /= cumulative_geom_area;
         }
 
-        if (materials[geom.materialid].material_type == MaterialType::Emissive) {
+        #if UBER_SHADER
+            if (glm::length(materials[geom.materialid].emission.emission_color) * materials[geom.materialid].emission.emission_strength > EPSILON) {
+        #else
+            if (materials[geom.materialid].material_type == MaterialType::Emissive) {
+        #endif
             emissive_area += cumulative_geom_area;
             emissive_geoms.push_back(i);
             emissive_geom_area_prefix.push_back(emissive_area);

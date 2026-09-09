@@ -338,11 +338,22 @@ void RenderImGui()
     changed |= ImGui::ColorEdit3("RGB", glm::value_ptr(scene->materials[PathTracerOptions::Get()->selected_material].color));
     changed |= ImGui::SliderFloat("Roughness", &scene->materials[PathTracerOptions::Get()->selected_material].roughness, 0.0f, 1.0f);
     changed |= ImGui::SliderFloat("Metallic", &scene->materials[PathTracerOptions::Get()->selected_material].metallic, 0.0f, 1.0f);
+    
+    #if UBER_SHADER
+        changed |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(scene->materials[PathTracerOptions::Get()->selected_material].emission.emission_color));
+        changed |= ImGui::SliderFloat("Emission Strength", &scene->materials[PathTracerOptions::Get()->selected_material].emission.emission_strength, 0.0f, 10.0f);
+    #else
+        changed |= ImGui::SliderFloat("Emittance", &scene->materials[PathTracerOptions::Get()->selected_material].emittance, 0.0f, 10.0f);
+    #endif
 
     ImGui::End();
 
     if (changed) {
         scene->precompute_emissive_mesh_area();
+        if (scene->total_emissive_mesh_area < EPSILON) {
+            PathTracerOptions::Get()->direct_light_sampling = false;
+        }
+
         camchanged = true;
     }
 

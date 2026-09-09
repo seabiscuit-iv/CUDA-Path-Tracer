@@ -19,3 +19,8 @@
 #define ENABLE_BOX_INTERSECTION     1
 #define ENABLE_SPHERE_INTERSECTION  0
 #define ENABLE_MESH_INTERSECTION    1
+
+#define UBER_SHADER 1
+
+// deprecated
+#define LOAD_FROM_JSON 0

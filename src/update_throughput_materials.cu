@@ -19,6 +19,13 @@ __device__ void update_throughput_materials (
     float metallic,
     bool is_specular
 ) {
+
+#if UBER_SHADER
+    glm::vec3 cook_torrance = CookTorrance::shadePathCookTorrance(path, materialColor, normal, path.sample_dir, roughness, metallic);
+    float pdf = CookTorrance::PDF(-path.ray.direction, path.sample_dir, normal, roughness, metallic, materialColor);
+    path.throughput *= cook_torrance / pdf;
+    path.last_pdf = pdf;
+#else
     if (material.material_type == MaterialType::Diffuse) {
         glm::vec3 lambert = Lambert::shadePathLambert(idx, iter, num_paths, depth, path, material, materialColor, normal, path.sample_dir);
         float pdf = Lambert::PDF(path.sample_dir, normal);
@@ -39,6 +46,7 @@ __device__ void update_throughput_materials (
         TransmissiveGlass::shadePathGlass(path, material, materialColor);
         path.last_pdf = 1.0;
     }
+#endif
 
     path.last_bounce_was_specular = is_specular;
 

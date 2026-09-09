@@ -101,3 +101,19 @@ __device__ glm::vec2 get_metallic_roughness(const Material& material, glm::vec2 
 
     return glm::vec2(roughness, metallic);
 }
+
+#if UBER_SHADER
+__device__ glm::vec3 get_emission(const Material &material, glm::vec2 uv, const TextureData *textures) {
+    glm::vec3 emission = material.emission.emission_color * material.emission.emission_strength;
+
+    if (material.emission.emissive_tex >= 0) {
+        uv = apply_texture_transform(uv, material.emission.emissive_tex_transform);
+
+        float4 tex = tex2D<float4>(textures[material.emission.emissive_tex].tex, uv.x, uv.y);
+
+        emission *= glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
+    }
+
+    return emission;
+}
+#endif
