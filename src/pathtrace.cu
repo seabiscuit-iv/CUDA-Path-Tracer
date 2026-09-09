@@ -252,6 +252,11 @@ void pathtraceFree()
     cudaFree(dev_triangle_buffer_locs);
     cudaFree(dev_normal_buffer_locs);
     cudaFree(dev_uv_buffer_locs);
+
+    cudaFree(dev_emissive_geoms);
+    cudaFree(dev_emissive_geom_area_prefix);
+    cudaFree(dev_hdri_marginal_cdf);
+    cudaFree(dev_hdri_conditional_cdfs);
     
     cudaFree(reinterpret_cast<void*>(d_optix_paramters));
 
