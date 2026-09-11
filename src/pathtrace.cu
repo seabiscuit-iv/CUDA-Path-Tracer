@@ -34,895 +34,31 @@
 #include "sample_materials.h"
 #include "update_throughput_materials.h"
 #include "morton_codes.h"
+#include "pathtrace/dev_options.h"
+#include "pathtrace/pathtrace_state.h"
+
+#include "kernels/image_kernels.h"
+#include "kernels/generate_ray_from_camera.h"
+#include "kernels/compute_intersections.h"
+#include "kernels/shade_path.h"
+#include "kernels/intersection_precompute.h"
+#include "kernels/draw_bvh.h"
+#include "kernels/sample_direct_light.h"
+#include "pathtrace/path_functors.h"
 
 #include "shaders/lambert.h"
 #include "shaders/specular.h"
 #include "shaders/cook_torrance.h"
 #include "shaders/glass.h"  
 
-#define M_PI 3.14159
 
-#define ACES 1
 
-__constant__ PathTracerOptions DEV_OPTIONS;
 
-//Kernel that writes the image to the OpenGL PBO directly.
-__global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, float iter, glm::vec3* image)
-{
-    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
-    if (x < resolution.x && y < resolution.y)
-    {
-        int index = x + (y * resolution.x);
-        glm::vec3 pix = image[index];
-
-        float invIter = __frcp_rn(iter);
-
-        pix = pix * invIter;
-
-        if (DEV_OPTIONS.material_debug_mode == 0) {
-            if (DEV_OPTIONS.color_mode == 0) {
-                pix = pix / (pix + glm::vec3(1.0f));
-            }
-            else if (DEV_OPTIONS.color_mode == 1) {
-                pix = AgX(pix);
-            }
-            else {
-                pix = ACESFilm(pix);
-            }
-
-            //gamma correction
-            pix = glm::pow(pix, glm::vec3(0.45f));
-        }
-
-        glm::ivec3 color;
-        color.x = glm::clamp((int)(pix.x * 255.0), 0, 255);
-        color.y = glm::clamp((int)(pix.y * 255.0), 0, 255);
-        color.z = glm::clamp((int)(pix.z * 255.0), 0, 255);
-
-        // Each thread writes one pixel location in the texture (textel)
-        pbo[index].w = 0;
-        pbo[index].x = color.x;
-        pbo[index].y = color.y;
-        pbo[index].z = color.z;
-    }
-}
-
-static Scene* hst_scene = NULL;
-static GuiDataContainer* guiData = NULL;
-static glm::vec3* dev_image = NULL;
-static Geom* dev_geoms = NULL;
-static Material* dev_materials = NULL;
-static PathSegment* dev_paths_A = NULL;
-static PathSegment* dev_paths_B = NULL;
-static ShadeableIntersection* dev_intersections = NULL;
-static ShadeableIntersection* dev_direct_light_intersections = NULL;
-static ShadeableIntersection* dev_environment_map_intersections = NULL;
-
-static int* dev_material_ids; //for optix
-
-static glm::vec3** dev_vertex_buffer_locs;
-static Triangle** dev_triangle_buffer_locs;
-static glm::vec3** dev_normal_buffer_locs;
-static glm::vec2** dev_uv_buffer_locs;
-
-// Optix
-static CUdeviceptr d_optix_paramters;
-
-static uint32_t* dev_morton_codes;
-static int* dev_path_scatter_buf;
-
-static cudaArray_t dev_exr_array;
-static cudaTextureObject_t exr_texture = 0;
-
-// emissive area sampling stuff
-static int* dev_emissive_geoms;
-static float* dev_emissive_geom_area_prefix;
-
-// hdri sampling
-static float* dev_hdri_marginal_cdf;
-static float* dev_hdri_conditional_cdfs;
-
-void InitDataContainer(GuiDataContainer* imGuiData)
-{
-    guiData = imGuiData;
-}
-
-void pathtraceInit(Scene* scene)
-{
-    hst_scene = scene;
-
-    const Camera& cam = hst_scene->state.camera;
-    const int pixelcount = cam.resolution.x * cam.resolution.y;
-
-    cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
-    cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
-
-    cudaMalloc(&dev_paths_A, pixelcount * sizeof(PathSegment));
-    cudaMalloc(&dev_paths_B, pixelcount * sizeof(PathSegment));
-
-    cudaMalloc(&dev_geoms, scene->geoms.size() * sizeof(Geom));
-    cudaMemcpy(dev_geoms, scene->geoms.data(), scene->geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
-
-    cudaMalloc(&dev_materials, scene->materials.size() * sizeof(Material));
-    cudaMemcpy(dev_materials, scene->materials.data(), scene->materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
-
-    cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
-    cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
-
-    cudaMalloc(&dev_direct_light_intersections, pixelcount * sizeof(ShadeableIntersection));
-    cudaMemset(dev_direct_light_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
-
-    cudaMalloc(&dev_environment_map_intersections, pixelcount * sizeof(ShadeableIntersection));
-    cudaMemset(dev_environment_map_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
-
-    cudaMalloc(&dev_morton_codes, pixelcount * sizeof(uint32_t));
-
-    cudaMalloc(&dev_path_scatter_buf, pixelcount * sizeof(int));
-
-    cudaMalloc( reinterpret_cast<void**>( &d_optix_paramters ), sizeof( Params ) );
-
-    cudaMalloc( &dev_material_ids, sizeof(int) * scene->geoms.size());
-    std::vector<int> material_ids;
-    for (Geom& geom : scene->geoms) {
-        material_ids.push_back(geom.materialid);
-    }
-    cudaMemcpy(dev_material_ids, material_ids.data(), material_ids.size() * sizeof(int), cudaMemcpyHostToDevice);
-
-    std::vector<glm::vec3*> vertex_buffer_locs;
-    std::vector<Triangle*> triangle_buffer_locs;
-    std::vector<glm::vec3*> normal_buffer_locs;
-    std::vector<glm::vec2*> uv_buffer_locs;
-
-    for (const Geom& geo : scene->geoms) {
-        if (geo.type == GeomType::MESH) {
-            vertex_buffer_locs.push_back(geo.mesh.d_verts);
-            triangle_buffer_locs.push_back(geo.mesh.d_triangles);
-            normal_buffer_locs.push_back(geo.mesh.has_normal_buffers ? geo.mesh.d_normals : nullptr);
-            uv_buffer_locs.push_back(geo.mesh.has_uvs ? geo.mesh.d_uvs : nullptr);
-        }
-    }
-
-    cudaMalloc( &dev_vertex_buffer_locs, sizeof(glm::vec3*) * vertex_buffer_locs.size() );
-    cudaMalloc( &dev_triangle_buffer_locs, sizeof(Triangle*) * triangle_buffer_locs.size() );
-    cudaMalloc( &dev_normal_buffer_locs, sizeof(glm::vec3*) * normal_buffer_locs.size() );
-    cudaMalloc( &dev_uv_buffer_locs, sizeof(glm::vec2*) * uv_buffer_locs.size() );
-
-    cudaMemcpy( dev_vertex_buffer_locs, vertex_buffer_locs.data(), sizeof(glm::vec3*) * vertex_buffer_locs.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy( dev_triangle_buffer_locs, triangle_buffer_locs.data(), sizeof(Triangle*) * triangle_buffer_locs.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy( dev_normal_buffer_locs, normal_buffer_locs.data(), sizeof(glm::vec3*) * normal_buffer_locs.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy( dev_uv_buffer_locs, uv_buffer_locs.data(), sizeof(glm::vec2*) * uv_buffer_locs.size(), cudaMemcpyHostToDevice);
-
-    cudaMemcpyToSymbol(DEV_OPTIONS, PathTracerOptions::Get(), sizeof(PathTracerOptions));
-
-    if (!scene->exr_data.empty()) {
-        // exr loading on GPU
-        cudaChannelFormatDesc exr_channel_desc = cudaCreateChannelDesc<float4>();
-        cudaMallocArray(&dev_exr_array, &exr_channel_desc, scene->exr_width, scene->exr_height);
-        cudaMemcpyToArray(dev_exr_array, 0, 0, scene->exr_data.data(), scene->exr_width * scene->exr_height * sizeof(glm::vec4), cudaMemcpyHostToDevice);
-
-        cudaResourceDesc res_desc = {};
-        res_desc.resType = cudaResourceTypeArray;
-        res_desc.res.array.array = dev_exr_array;
-
-        cudaTextureDesc tex_desc = {};
-        tex_desc.addressMode[0] = cudaAddressModeWrap;
-        tex_desc.addressMode[1] = cudaAddressModeWrap;
-        tex_desc.filterMode = cudaFilterModeLinear;
-        tex_desc.readMode = cudaReadModeElementType;
-        tex_desc.normalizedCoords = 1;
-
-        cudaCreateTextureObject(&exr_texture, &res_desc, &tex_desc, nullptr);
-    }
-
-    cudaMalloc( &dev_emissive_geoms, scene->emissive_geoms.size() * sizeof(int));
-    cudaMemcpy( dev_emissive_geoms, scene->emissive_geoms.data(), scene->emissive_geoms.size() * sizeof(int), cudaMemcpyHostToDevice );
-
-    cudaMalloc( &dev_emissive_geom_area_prefix, scene->emissive_geom_area_prefix.size() * sizeof(float));
-    cudaMemcpy( dev_emissive_geom_area_prefix, scene->emissive_geom_area_prefix.data(), scene->emissive_geom_area_prefix.size() * sizeof(float), cudaMemcpyHostToDevice );
-
-    if (!hst_scene->exr_data.empty()) {
-        cudaMalloc( &dev_hdri_conditional_cdfs, scene->hdri_conditional_cdfs.size() * sizeof(float) );
-        cudaMemcpy( dev_hdri_conditional_cdfs, scene->hdri_conditional_cdfs.data(), scene->hdri_conditional_cdfs.size() * sizeof(float), cudaMemcpyHostToDevice );
-
-        cudaMalloc( &dev_hdri_marginal_cdf, scene->hdri_marginal_cdf.size() * sizeof(float) );
-        cudaMemcpy( dev_hdri_marginal_cdf, scene->hdri_marginal_cdf.data(), scene->hdri_marginal_cdf.size() * sizeof(float), cudaMemcpyHostToDevice );
-    }
-
-    checkCUDAError("pathtraceInit");
-}
-
-void pathtraceFree()
-{
-    cudaFree(dev_image);
-    cudaFree(dev_paths_A);
-    cudaFree(dev_paths_B);
-    cudaFree(dev_geoms);
-    cudaFree(dev_materials);
-    cudaFree(dev_intersections);
-    cudaFree(dev_direct_light_intersections);
-    cudaFree(dev_environment_map_intersections);
-
-    cudaFree(dev_morton_codes);
-    cudaFree(dev_path_scatter_buf);
-    cudaFree(dev_material_ids);
-
-    cudaFree(dev_vertex_buffer_locs);
-    cudaFree(dev_triangle_buffer_locs);
-    cudaFree(dev_normal_buffer_locs);
-    cudaFree(dev_uv_buffer_locs);
-
-    cudaFree(dev_emissive_geoms);
-    cudaFree(dev_emissive_geom_area_prefix);
-    cudaFree(dev_hdri_marginal_cdf);
-    cudaFree(dev_hdri_conditional_cdfs);
-    
-    cudaFree(reinterpret_cast<void*>(d_optix_paramters));
-
-    // free exr
-    cudaDestroyTextureObject(exr_texture);
-    cudaFreeArray(dev_exr_array);
-
-    checkCUDAError("pathtraceFree");
-}
-
-
-__global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, PathSegment* __restrict__ pathSegments)
-{
-    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-
-    if (x < cam.resolution.x && y < cam.resolution.y) {
-        int index = x + (y * cam.resolution.x);
-        PathSegment& segment = pathSegments[index];
-
-        segment.ray.origin = cam.position;
-        segment.color = glm::vec3(0.0f);
-        segment.throughput = glm::vec3(1.0f);
-        segment.kill = false;
-
-        
-        CREATE_RANDOM_ENGINE(iter, index, traceDepth, u01, rng);
-
-        float x1 = u01(rng) - 0.5f;
-        float x2 = u01(rng) - 0.5f;
-
-        float pX = (float(x) + x1 + 0.5f) - (float)cam.resolution.x * 0.5f;
-        float pY = (float(y) + x2 + 0.5f) - (float)cam.resolution.y * 0.5f;
-
-        segment.ray.direction = glm::normalize(
-            cam.view 
-            - (cam.right * cam.pixelLength.x * pX) 
-            - (cam.up    * cam.pixelLength.y * pY)
-        );
-        segment.pixelIndex = index;
-    }
-}
-
-__global__ void computeIntersections(
-    int depth,
-    int num_paths,
-    const PathSegment* __restrict__ pathSegments,
-    const Geom* __restrict__ geoms,
-    int geoms_size,
-    ShadeableIntersection* __restrict__ intersections)
-{
-    int path_index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (path_index < num_paths)
-    {
-        const PathSegment pathSegment = pathSegments[path_index];
-        ShadeableIntersection isect = intersections[path_index];
-
-        float t;
-        glm::vec3 intersect_point;
-        glm::vec3 normal;
-        float t_min = FLT_MAX;
-        int hit_geom_index = -1;
-        bool outside = true;
-
-        glm::vec3 tmp_intersect;
-        glm::vec3 tmp_normal;
-
-        for (int i = 0; i < geoms_size; i++)
-        {
-            const Geom &geom = geoms[i];
-
-            if (geom.type == CUBE)
-            {
-                // 94 vgprs
-                #if ENABLE_BOX_INTERSECTION
-                    t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
-                #else 
-                    t = -1.0f;
-                #endif
-            }
-            else if (geom.type == SPHERE)
-            {
-                // 78 vgprs
-                #if ENABLE_SPHERE_INTERSECTION
-                    t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
-                #else 
-                    t = -1.0f;
-                #endif
-            }
-            else if (geom.type == MESH)
-            {
-                // 80 VGPRs
-                #if ENABLE_MESH_INTERSECTION
-                    t = meshIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
-                #else
-                    t = -1.0f;
-                #endif
-            }
-
-            if (t > 0.0f && t_min > t)
-            {
-                t_min = t;
-                hit_geom_index = i;
-                intersect_point = tmp_intersect;
-                normal = tmp_normal;
-            }
-        }
-
-        if (hit_geom_index == -1)
-        {
-            isect.t = -1.0f;
-        }
-        else
-        {
-            // The ray hits something
-            isect.t = t_min;
-            isect.materialId = geoms[hit_geom_index].materialid;
-            isect.surfaceNormal = normal;
-        }
-
-        intersections[path_index] = isect;
-    }
-}
-
-__device__ float envmap_pdf(glm::vec3 d, float* marginal_cdf, float* conditional_cdfs, int W, int H) {
-    float phi   = atan2f(d.z, d.x);
-    float theta = acosf(glm::clamp(d.y, -1.0f, 1.0f));
-
-    float u = (phi + PI) / (2.0f * PI);
-    float v = theta / PI;
-
-    int col = glm::clamp(int(u * W), 0, W - 1);
-    int row = glm::clamp(int(v * H), 0, H - 1);
-
-    float p_marginal    = (marginal_cdf[row] - (row == 0 ? 0.0f : marginal_cdf[row - 1])) * H;
-    float p_conditional = (conditional_cdfs[row * W + col] - (col == 0 ? 0.0f : conditional_cdfs[row * W + col - 1])) * W;
-
-    float sin_theta = sinf(theta);
-    return (sin_theta > 1e-6f) ? (p_marginal * p_conditional) / (2.0f * PI * PI * sin_theta) : 0.0f;
-}
-
-
-
-__global__ void shadePath(
-    int iter,
-    int num_paths,
-    PathSegment* __restrict__ pathSegments,
-    Material* __restrict__ materials,
-    ShadeableIntersection* __restrict__ shadeableIntersections,
-    ShadeableIntersection* __restrict__ directLightIntersections,
-    ShadeableIntersection* __restrict__ environmentMapIntersections,
-    int depth,
-    bool has_exr,
-    cudaTextureObject_t exr,
-    TextureData* textures,
-    int num_emissive_geoms,
-    int* emissive_geoms,
-    float* emissive_geoms_area_prefix,
-    const Geom* __restrict__ geoms,
-    float total_emissive_mesh_area,
-    float* marginal_cdf,
-    float* conditional_cdfs,
-    int exr_width,
-    int exr_height
-)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_paths)
-    {
-        return;
-    }
-
-    ShadeableIntersection default_isect = {};
-    ShadeableIntersection &intersection = shadeableIntersections[idx];
-    ShadeableIntersection &direct_light_intersection = directLightIntersections[idx];
-    ShadeableIntersection &env_map_intersesction = has_exr ? environmentMapIntersections[idx] : default_isect;
-    PathSegment &path = pathSegments[idx];
-
-    thrust::default_random_engine rng = makeSeededRandomEngine(iter, path.pixelIndex, depth);
-
-    if (intersection.t > 0.0f)
-    {
-        Material &material = materials[intersection.materialId];
-
-        glm::vec3 materialColor = get_albedo(material, intersection.uvs, textures);
-
-        glm::vec3 normal_map;
-        glm::vec3 normal = get_normal(material, textures, intersection, &normal_map);
-
-        glm::vec2 metallic_roughness = get_metallic_roughness(material, intersection.uvs, textures);
-        float roughness = metallic_roughness.x;
-        float metallic = metallic_roughness.y;
-
-        #if UBER_SHADER
-            glm::vec3 emission = get_emission(material, intersection.uvs, textures);
-        #endif
-
-        #if UBER_SHADER
-            bool is_specular = false;
-        #else
-            bool is_specular = (material.material_type == MaterialType::Specular || material.material_type == MaterialType::Glass);
-        #endif
-
-        if (DEV_OPTIONS.material_debug_mode != 0) {
-            render_material_debug_mode(
-                path,
-                materialColor,
-                normal,
-                normal_map,
-                roughness,
-                metallic,
-                DEV_OPTIONS.material_debug_mode
-            );
-        }
-        else {
-            sample_materials(
-                material,
-                intersection,
-                path,
-                idx,
-                num_paths,
-                iter,
-                depth,
-                rng,
-                materialColor,
-                normal,
-                roughness,
-                metallic
-            );
-
-            if (DEV_OPTIONS.environment_map_importance_sampling) {
-                #if UBER_SHADER
-                if (glm::length(emission) > EPSILON) {
-                #else
-                if (material.material_type == MaterialType::Emissive) {
-                #endif
-                    float mis_weight = 1.0f;
-
-                    if (depth > 1 && !path.last_bounce_was_specular) {
-                        float pdf_bsdf = path.last_pdf;
-                        float pdf_env_of_bsdf = envmap_pdf(path.ray.direction, marginal_cdf, conditional_cdfs, exr_width, exr_height);
-
-
-                        mis_weight = (pdf_bsdf * pdf_bsdf) / (pdf_bsdf * pdf_bsdf + pdf_env_of_bsdf * pdf_env_of_bsdf);
-                    }
-
-                    #if UBER_SHADER
-                        path.color += path.throughput * (mis_weight * emission);
-                    #else
-                        path.color += path.throughput * (mis_weight * (material.emittance * materialColor));
-                    #endif
-                    path.kill = true;
-                }
-                else {
-                    if (env_map_intersesction.t < 0.0f && !is_specular && !path.kill && has_exr) {
-                        glm::vec3 env_dir = path.environment_map_sample;
-
-                        float pdf_env_of_env;
-                        float pdf_bsdf_of_env;
-
-                        #if UBER_SHADER
-                            pdf_bsdf_of_env = CookTorrance::PDF(-path.ray.direction, env_dir, normal, roughness, metallic, materialColor);
-                        #else
-                            if (material.material_type == MaterialType::Diffuse) {
-                                pdf_bsdf_of_env = Lambert::PDF(env_dir, normal);
-                            }
-                            else if (material.material_type == MaterialType::Microfacet) {
-                                pdf_bsdf_of_env = CookTorrance::PDF(-path.ray.direction, env_dir, normal, roughness, metallic, materialColor);
-                            }
-                        #endif
-
-                        pdf_env_of_env = envmap_pdf(env_dir, marginal_cdf, conditional_cdfs, exr_width, exr_height);
-
-                        float mis_weight = (pdf_env_of_env * pdf_env_of_env) / (pdf_env_of_env * pdf_env_of_env + pdf_bsdf_of_env * pdf_bsdf_of_env);
-
-                        glm::vec3 brdf;
-                        #if UBER_SHADER
-                            brdf = CookTorrance::BRDF(-path.ray.direction, normal, env_dir, materialColor, roughness, metallic);
-                        #else
-                            if (material.material_type == MaterialType::Diffuse) {
-                                brdf = materialColor / PI;
-                            }
-                            else if (material.material_type == MaterialType::Microfacet) {
-                                brdf = CookTorrance::BRDF(-path.ray.direction, normal, env_dir, materialColor, roughness, metallic);
-                            }
-                        #endif
-
-                        glm::vec3 d = glm::normalize(env_dir);
-                        float phi   = atan2f(d.z, d.x);       // [-pi, pi]
-                        float theta = glm::acos(glm::clamp(d.y, -1.0f, 1.0f)); // [0, pi]
-
-                        float u = (phi + M_PI) * (1.0f / (2.0f * M_PI));
-                        float v = theta * (1.0f / M_PI);
-
-                        float4 env = tex2D<float4>(exr, u, v);
-                        glm::vec3 env_light = glm::vec3(env.x, env.y, env.z) * DEV_OPTIONS.envmap_intensity;
-
-                        float cosThetaSurface = glm::dot(normal, env_dir);
-
-                        if (cosThetaSurface > 0.0f && pdf_env_of_env > 1e-8f) {
-                            glm::vec3 contribution = (env_light * brdf * cosThetaSurface) / pdf_env_of_env;
-                            path.color += path.throughput * contribution * mis_weight;
-                        }
-                    }
-                }
-            }
-            else if (DEV_OPTIONS.direct_light_sampling) {
-                #if UBER_SHADER
-                if (glm::length(emission) > EPSILON) {
-                #else
-                if (material.material_type == MaterialType::Emissive) {
-                #endif
-                    float mis_weight = 1.0f;
-
-                    if (depth > 1 && !path.last_bounce_was_specular) {
-                        float pdf_bsdf = path.last_pdf;
-
-                        float dist_sq = intersection.t * intersection.t;
-                        float cosThetaLight = glm::dot(intersection.surfaceNormal, -path.ray.direction);
-
-                        if (cosThetaLight > 0.0001f) {
-                            float pdf_dl_area = 1.0f / total_emissive_mesh_area;
-                            float pdf_dl_sa = pdf_dl_area * (dist_sq / cosThetaLight);
-                            
-                            mis_weight = (pdf_bsdf * pdf_bsdf) / (pdf_bsdf * pdf_bsdf + pdf_dl_sa * pdf_dl_sa);
-                        }
-                        else {
-                            mis_weight = 0.0f;
-                        }
-                    }
-
-
-                    #if UBER_SHADER
-                        path.color += path.throughput * (mis_weight * emission);
-                    #else
-                        path.color += path.throughput * (mis_weight * (material.emittance * materialColor));
-                    #endif
-                    path.kill = true;
-                } 
-                else {
-
-                    if (direct_light_intersection.t > 0.0f && !is_specular && !path.kill) {
-                        glm::vec3 surface_point = intersection.t * path.ray.direction + path.ray.origin;
-                        glm::vec3 light_vec = path.direct_light_sample - surface_point;
-
-                        float dist_sq = glm::dot(light_vec, light_vec);
-                        float dist = sqrt(dist_sq);
-                        glm::vec3 light_dir = light_vec / dist;
-
-                        float cosThetaSurface = glm::dot(normal, light_dir);
-                        float cosThetaLight = glm::dot(direct_light_intersection.surfaceNormal, -light_dir);
-
-                        if (cosThetaSurface > 0.0f && cosThetaLight > 0.0f) {
-                            float pdf_dl_area = 1.0f / total_emissive_mesh_area;
-                            float pdf_dl_sa = pdf_dl_area * (dist_sq / cosThetaLight);
-
-                            float pdf_bsdf = 0.0f;
-
-                            #if UBER_SHADER
-                                pdf_bsdf = CookTorrance::PDF(-path.ray.direction, light_dir, normal, roughness, metallic, materialColor);
-                            #else
-                                if (material.material_type == MaterialType::Diffuse) {
-                                    pdf_bsdf = Lambert::PDF(light_dir, normal);
-                                }
-                                else if (material.material_type == MaterialType::Microfacet) {
-                                    pdf_bsdf = CookTorrance::PDF(-path.ray.direction, light_dir, normal, roughness, metallic, materialColor);
-                                }
-                            #endif
-
-                            float mis_weight = (pdf_dl_sa * pdf_dl_sa) / (pdf_dl_sa * pdf_dl_sa + pdf_bsdf * pdf_bsdf);
-
-                            glm::vec3 brdf;
-                            #if UBER_SHADER
-                                brdf = CookTorrance::BRDF(-path.ray.direction, normal, light_dir, materialColor, roughness, metallic);
-                            #else
-                                if (material.material_type == MaterialType::Diffuse) {
-                                    brdf = materialColor / PI;
-                                }
-                                else if (material.material_type == MaterialType::Microfacet) {
-                                    brdf = CookTorrance::BRDF(-path.ray.direction, normal, light_dir, materialColor, roughness, metallic);
-                                }
-                            #endif
-
-                            int light_id = direct_light_intersection.materialId;
-
-                            #if UBER_SHADER
-                                glm::vec3 light_radiance = get_emission(materials[light_id], direct_light_intersection.uvs, textures);
-                            #else
-                                glm::vec3 light_color = materials[light_id].color;
-
-                                if (materials[light_id].albedo_tex >= 0) {
-                                    glm::vec2 dl_uv = direct_light_intersection.uvs;
-
-                                    dl_uv *= materials[light_id].albedo_tex_transform.scale;
-
-                                    if(materials[light_id].albedo_tex_transform.rotation) {
-                                        float c = cosf(materials[light_id].albedo_tex_transform.rotation);
-                                        float s = sinf(materials[light_id].albedo_tex_transform.rotation);
-
-                                        dl_uv = glm::vec2 (
-                                            c * dl_uv.x - s * dl_uv.y,
-                                            s * dl_uv.x + c * dl_uv.y
-                                        );
-                                    }
-
-                                    dl_uv += materials[light_id].albedo_tex_transform.offset;
-
-                                    float4 tex = tex2D<float4>(textures[materials[light_id].albedo_tex].tex, dl_uv.x, dl_uv.y);
-                                    light_color = glm::pow(glm::vec3(tex.x, tex.y, tex.z), glm::vec3(2.2f));
-                                }
-
-                                glm::vec3 light_radiance = materials[light_id].emittance * light_color;
-                            #endif
-                            glm::vec3 contribution = (light_radiance * brdf * cosThetaSurface) / pdf_dl_sa;
-                            path.color += path.throughput * contribution * mis_weight;
-                        }
-                    }
-                }
-            }
-            #if UBER_SHADER
-            else if (glm::length(emission) > EPSILON) {
-                path.color += path.throughput * emission;
-                path.kill = true;
-            }
-            #else
-            else if (material.material_type == MaterialType::Emissive) {
-                path.color += path.throughput * material.emittance * materialColor;
-                path.kill = true;
-            }
-            #endif
-
-            if (!path.kill) {
-                update_throughput_materials(
-                    material,
-                    path,
-                    idx,
-                    num_paths,
-                    iter,
-                    depth,
-                    rng,
-                    materialColor,
-                    normal,
-                    roughness,
-                    metallic,
-                    is_specular
-                );
-            }
-        }
-    }   
-    else if (!path.kill && has_exr) {
-        // hdri
-        glm::vec3 d = glm::normalize(path.ray.direction);
-        float phi = atan2f(d.z, d.x);
-        float theta = glm::acos(glm::clamp(d.y, -1.0f, 1.0f));
-        
-        float u = (phi + M_PI) * (1.0f / (2.0f * M_PI));
-        float v = theta * (1.0f / M_PI);
-
-        float4 env = tex2D<float4>(exr, u, v);
-        
-        glm::vec3 env_radiance = glm::vec3(env.x, env.y, env.z) * DEV_OPTIONS.envmap_intensity;
-
-        float mis_weight = 1.0f;
-        if (DEV_OPTIONS.environment_map_importance_sampling && depth > 1 && !path.last_bounce_was_specular) {
-            float pdf_bsdf = path.last_pdf;
-            float pdf_env  = envmap_pdf(d, marginal_cdf, conditional_cdfs, exr_width, exr_height);
-            mis_weight = (pdf_bsdf * pdf_bsdf) / (pdf_bsdf * pdf_bsdf + pdf_env * pdf_env);
-        }
-
-        path.color += path.throughput * env_radiance * mis_weight;
-    }
-    
-    if (intersection.t == -1.0f) {
-        path.kill = true;
-    }
-    else {
-        Ray& ray = path.ray;
-        glm::vec3 hit_point = getPointOnRay(ray, intersection.t);
-        glm::vec3 normal = intersection.surfaceNormal;
-
-        // Guard for paths
-        float sample_len2 = glm::dot(path.sample_dir, path.sample_dir);
-        if (!(sample_len2 > 1e-12f) || !isfinite(sample_len2)) {
-            path.kill = true;
-            return;
-        }
-
-        ray.direction = path.sample_dir;
-
-        float eps = 1e-4f;
-        if (glm::dot(ray.direction, normal) > 0.0f) {
-            ray.origin = hit_point + (normal * eps);
-        }
-        else {
-            ray.origin = hit_point - (normal * eps);
-        }   
-    }
-}
-
-
-// Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* __restrict__ iterationPaths)
-{
-    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-
-    if (index < nPaths)
-    {
-        PathSegment iterationPath = iterationPaths[index];
-        glm::vec3 color = iterationPath.color;
-
-        image[iterationPath.pixelIndex] += color;
-    }
-}
-
-__global__ void intersectionPrecompute(int n, PathSegment* __restrict__ pathSegments, const Geom* mesh, uint32_t* morton_codes) {
-    int path_index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (path_index < n)
-    {
-        Ray r = pathSegments[path_index].ray;
-
-        r.origin = glm::vec3(mesh->inverseTransform * glm::vec4(r.origin, 1.0f));
-        r.direction = glm::vec3(mesh->inverseTransform * glm::vec4(r.direction, 0.0f));
-
-        r.inv_direction.x = __frcp_rn(r.direction.x);
-        r.inv_direction.y = __frcp_rn(r.direction.y);
-        r.inv_direction.z = __frcp_rn(r.direction.z);
-
-        r.sign.x = (r.inv_direction.x < 0.0f) ? 1 : 0;
-        r.sign.y = (r.inv_direction.y < 0.0f) ? 1 : 0;
-        r.sign.z = (r.inv_direction.z < 0.0f) ? 1 : 0;
-
-        BoundingBox bbox = mesh->mesh.bvh.dev_bvh[0].box;
-
-        float scene_extent = glm::length(bbox.box_max - bbox.box_min);
-
-        float t;
-        morton_codes[path_index] = bbox.RayBoxInterection(r, t)
-            ? rayMortonCode(r, scene_extent)
-            : MORTON_CODE_MISS;
-    }
-}
-
-
-__global__ void drawBVH(
-    int depth,
-    int num_paths,
-    PathSegment* __restrict__ pathSegments,
-    const Geom* __restrict__ geoms,
-    int geoms_size,
-    ShadeableIntersection* __restrict__ intersections)
-{
-    int path_index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (path_index < num_paths)
-    {
-        PathSegment &pathSegment = pathSegments[path_index];
-
-        int count = 0;
-
-        for (int i = 0; i < geoms_size; i++)
-        {
-            const Geom &geom = geoms[i];
-
-            if (geom.type == MESH)
-            {
-                count += bvhCountHits(geom, pathSegment.ray);
-            }
-        }
-
-        pathSegment.color += float(count) * glm::vec3(0.001f);
-    }
-}
-
-__global__ void sampleDirectLight(
-    int iter,
-    int num_paths,
-    PathSegment* pathSegments,
-    int depth,
-    int num_emissive_geoms,
-    int* emissive_geoms,
-    float* emissive_geoms_area_prefix,
-    const Geom* __restrict__ geoms,
-    float total_emissive_mesh_area,
-    float* marginal_cdf,
-    float* conditional_cdfs,
-    int exr_width,
-    int exr_height
-)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_paths)
-    {
-        return;
-    }
-
-    PathSegment& path = pathSegments[idx];
-
-    thrust::default_random_engine rng = makeSeededRandomEngine(iter, path.pixelIndex, depth);
-    
-    if (DEV_OPTIONS.direct_light_sampling) {
-        thrust::uniform_real_distribution<float> u01(0, 1);
-        float rand = u01(rng);
-
-        // binary search on dev_emissive_geom_area_prefix (range 0 .. num_emissive_geoms)
-        int select = cudaUtils::select_from_cdf(emissive_geoms_area_prefix, num_emissive_geoms, rand);
-        const Geom& emissive_geom = geoms[emissive_geoms[select]];
-
-        float lower = (select == 0) ? 0.0f : emissive_geoms_area_prefix[select - 1];
-        float upper = emissive_geoms_area_prefix[select];
-        float denominator = upper - lower;
-        float tri_offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
-        tri_offset = glm::clamp(tri_offset, 0.0f, 1.0f);
-
-        int tri_select = cudaUtils::select_from_cdf(emissive_geom.mesh.d_triangle_area_percentage_prefix, emissive_geom.mesh.num_triangles, tri_offset);
-
-        // sample the triangle at tri_select
-        Triangle& tri = emissive_geom.mesh.d_triangles[tri_select];
-        glm::vec3 v0 = emissive_geom.mesh.d_verts[tri.v_indices[0]];
-        glm::vec3 v1 = emissive_geom.mesh.d_verts[tri.v_indices[1]];
-        glm::vec3 v2 = emissive_geom.mesh.d_verts[tri.v_indices[2]];
-
-        float r1 = sqrt(u01(rng));
-        float r2 = u01(rng);
-        float u = 1.0f - r1;
-        float v = r2 * r1;
-
-        glm::vec3 local_pos = u * v0 + v * v1 + (1.0f - u - v) * v2;
-        glm::vec3 world_light_pos = glm::vec3(emissive_geom.transform * glm::vec4(local_pos, 1.0f));
-
-        path.direct_light_sample = world_light_pos;
-    }
-
-    if (DEV_OPTIONS.environment_map_importance_sampling) {
-        thrust::uniform_real_distribution<float> u01(0, 1);
-        float rand = u01(rng);
-
-        int marginal = cudaUtils::select_from_cdf(marginal_cdf, exr_height, rand);
-
-        float lower = (marginal == 0) ? 0.0f : marginal_cdf[marginal - 1];
-        float upper = marginal_cdf[marginal];
-        float denominator = upper - lower;
-        float offset = (denominator > 1e-10f) ? (rand - lower) / denominator : 0.0f;
-        offset = glm::clamp(offset, 0.0f, 1.0f);
-
-        int conditional = cudaUtils::select_from_cdf(conditional_cdfs + (marginal * exr_width), exr_width, offset);
-
-        float u = (conditional + 0.5f) / exr_width;
-        float v = (marginal + 0.5f) / exr_height;
-
-        float phi = u * 2.0 * PI - PI;
-        float theta = v * PI;
-
-        glm::vec3 dir;
-        float sin_theta = sinf(theta);
-        dir.x = sin_theta * cosf(phi);
-        dir.y = cosf(theta);
-        dir.z = sin_theta * sinf(phi);
-
-        path.environment_map_sample = dir;
-    }
-}
 
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
+    PathTraceState& pt_state = PathTraceState::Get();
     // fmt::println("PATHTRACE: {} vs {}", sizeof(ShadeableIntersection), sizeof(OptixShadeableIntersection));
     // fmt::println("Offset 0: {} vs {}", offsetof(ShadeableIntersection, t), offsetof(OptixShadeableIntersection, t));
     // fmt::println("Offset 1: {} vs {}", offsetof(ShadeableIntersection, surfaceNormal), offsetof(OptixShadeableIntersection, surfaceNormal));
@@ -930,8 +66,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // fmt::println("Offset 3: {} vs {}", offsetof(ShadeableIntersection, materialId), offsetof(OptixShadeableIntersection, materialId));
     // fmt::println("Offset 4: {} vs {}", offsetof(ShadeableIntersection, uvs), offsetof(OptixShadeableIntersection, u));
 
-    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 1 : hst_scene->state.traceDepth;
-    const Camera& cam = hst_scene->state.camera;
+    const int traceDepth = PathTracerOptions::Get()->material_debug_mode ? 1 : pt_state.hst_scene->state.traceDepth;
+    const Camera& cam = pt_state.hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
 
     // 2D block for generating ray from camera
@@ -943,7 +79,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // 1D block for path tracing
     const int blockSize1d = BLOCK_SIZE_1D;
 
-    generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths_A);
+    generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, pt_state.dev_paths_A);
     checkCUDAError("generate camera ray");
 
     int depth = 0;
@@ -951,8 +87,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     CudaTimer cudaTimer;
 
-    PathSegment* dev_paths = dev_paths_A;
-    PathSegment* dev_paths_sorted = dev_paths_A;
+    PathSegment* dev_paths = pt_state.dev_paths_A;
+    PathSegment* dev_paths_sorted = pt_state.dev_paths_A;
 
     int last_num_paths = num_paths;
 
@@ -960,8 +96,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     while (!iterationComplete)
     {
         #if RAY_SORTING
-            dev_paths = (depth % 2) == 0 ? dev_paths_A : dev_paths_B;
-            dev_paths_sorted = (depth % 2) == 1 ? dev_paths_A : dev_paths_B;
+            dev_paths = (depth % 2) == 0 ? pt_state.dev_paths_A : pt_state.dev_paths_B;
+            dev_paths_sorted = (depth % 2) == 1 ? pt_state.dev_paths_A : pt_state.dev_paths_B;
         #endif
 
         CUDA_TIMER_RECORD(cudaTimer, "Start, Iter {}", depth+1);
@@ -971,9 +107,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         }
 
         #if !OPTIX
-            cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
-            cudaMemset(dev_direct_light_intersections, 0, num_paths * sizeof(ShadeableIntersection));
-            cudaMemset(dev_environment_map_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+            cudaMemset(pt_state.dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+            cudaMemset(pt_state.dev_direct_light_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+            cudaMemset(pt_state.dev_environment_map_intersections, 0, num_paths * sizeof(ShadeableIntersection));
 
             CUDA_TIMER_RECORD(cudaTimer, "Memset, Iter {}", depth+1);
         #endif
@@ -982,10 +118,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
         #if 0
             const Geom* d_mesh = nullptr;
-            for (int i = 0; i < hst_scene->geoms.size(); i++) {
-                Geom &geom = hst_scene->geoms[i];
+            for (int i = 0; i < pt_state.hst_scene->geoms.size(); i++) {
+                Geom &geom = pt_state.hst_scene->geoms[i];
                 if (geom.type == GeomType::MESH) {
-                    d_mesh = dev_geoms + i;
+                    d_mesh = pt_state.dev_geoms + i;
                     break;
                 }
             }
@@ -1000,10 +136,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             CUDA_TIMER_RECORD(cudaTimer, "Partition Mesh Hits, Iter {}", depth+1); 
         #elif RAY_SORTING
             const Geom* d_mesh = nullptr;
-            for (int i = 0; i < hst_scene->geoms.size(); i++) {
-                Geom &geom = hst_scene->geoms[i];
+            for (int i = 0; i < pt_state.hst_scene->geoms.size(); i++) {
+                Geom &geom = pt_state.hst_scene->geoms[i];
                 if (geom.type == GeomType::MESH) {
-                    d_mesh = dev_geoms + i;
+                    d_mesh = pt_state.dev_geoms + i;
                     break;
                 }
             }
@@ -1017,14 +153,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 num_paths,
                 dev_paths,
                 d_mesh,
-                dev_morton_codes
+                pt_state.dev_morton_codes
             );
 
             CUDA_TIMER_RECORD(cudaTimer, "Morton Precompute, Iter {}", depth+1);
 
-            thrust::sequence(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf) + num_paths);
-            thrust::sort_by_key(dPtr(dev_morton_codes), dPtr(dev_morton_codes + num_paths), dPtr(dev_path_scatter_buf));
-            thrust::gather(dPtr(dev_path_scatter_buf), dPtr(dev_path_scatter_buf + num_paths), dPtr(dev_paths), dPtr(dev_paths_sorted));
+            thrust::sequence(dPtr(pt_state.dev_path_scatter_buf), dPtr(pt_state.dev_path_scatter_buf) + num_paths);
+            thrust::sort_by_key(dPtr(pt_state.dev_morton_codes), dPtr(pt_state.dev_morton_codes + num_paths), dPtr(pt_state.dev_path_scatter_buf));
+            thrust::gather(dPtr(pt_state.dev_path_scatter_buf), dPtr(pt_state.dev_path_scatter_buf + num_paths), dPtr(dev_paths), dPtr(dev_paths_sorted));
             thrust::copy(dPtr(dev_paths + num_paths), dPtr(dev_paths + last_num_paths), dPtr(dev_paths_sorted + num_paths));
 
             CUDA_TIMER_RECORD(cudaTimer, "Sort Mesh Hits Morton, Iter {}", depth+1);
@@ -1036,15 +172,15 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 num_paths, 
                 dev_paths_sorted, 
                 depth,
-                hst_scene->emissive_geoms.size(),
-                dev_emissive_geoms,
-                dev_emissive_geom_area_prefix,
-                dev_geoms,
-                hst_scene->total_emissive_mesh_area,
-                dev_hdri_marginal_cdf,
-                dev_hdri_conditional_cdfs,
-                hst_scene->exr_width,
-                hst_scene->exr_height
+                pt_state.hst_scene->emissive_geoms.size(),
+                pt_state.dev_emissive_geoms,
+                pt_state.dev_emissive_geom_area_prefix,
+                pt_state.dev_geoms,
+                pt_state.hst_scene->total_emissive_mesh_area,
+                pt_state.dev_hdri_marginal_cdf,
+                pt_state.dev_hdri_conditional_cdfs,
+                pt_state.hst_scene->exr_width,
+                pt_state.hst_scene->exr_height
             );
         }
 
@@ -1053,9 +189,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 depth,
                 num_paths,
                 dev_paths_sorted,
-                dev_geoms,
-                hst_scene->geoms.size(),
-                dev_intersections
+                pt_state.dev_geoms,
+                pt_state.hst_scene->geoms.size(),
+                pt_state.dev_intersections
             );
         }
         else {
@@ -1065,30 +201,30 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                     depth,
                     num_paths,
                     dev_paths_sorted,
-                    dev_geoms,
-                    hst_scene->geoms.size(),
-                    dev_intersections
+                    pt_state.dev_geoms,
+                    pt_state.hst_scene->geoms.size(),
+                    pt_state.dev_intersections
                 );
                 checkCUDAError("compute intersections");
             #else // OPTIX
                 // time for some optix magic
                 Params optix_params = {};
-                optix_params.handle = hst_scene->ias_handle;
+                optix_params.handle = pt_state.hst_scene->ias_handle;
                 optix_params.path_segments = reinterpret_cast<OptixPathSegment*>(dev_paths_sorted);
-                optix_params.debug_image = reinterpret_cast<float3*>(dev_image);
-                optix_params.shadeable_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_intersections);
-                optix_params.direct_light_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_direct_light_intersections);
-                optix_params.environment_map_intersections = reinterpret_cast<OptixShadeableIntersection*>(dev_environment_map_intersections);
-                optix_params.material_ids = dev_material_ids;
-                optix_params.vertex_buffer_locations = (float3**)dev_vertex_buffer_locs;
-                optix_params.triangle_buffer_locations = (OptixTriangle**)dev_triangle_buffer_locs;
-                optix_params.normal_buffer_locations = (float3**)dev_normal_buffer_locs;
-                optix_params.uv_buffer_locations = (float2**)dev_uv_buffer_locs;
+                optix_params.debug_image = reinterpret_cast<float3*>(pt_state.dev_image);
+                optix_params.shadeable_intersections = reinterpret_cast<OptixShadeableIntersection*>(pt_state.dev_intersections);
+                optix_params.direct_light_intersections = reinterpret_cast<OptixShadeableIntersection*>(pt_state.dev_direct_light_intersections);
+                optix_params.environment_map_intersections = reinterpret_cast<OptixShadeableIntersection*>(pt_state.dev_environment_map_intersections);
+                optix_params.material_ids = pt_state.dev_material_ids;
+                optix_params.vertex_buffer_locations = (float3**)pt_state.dev_vertex_buffer_locs;
+                optix_params.triangle_buffer_locations = (OptixTriangle**)pt_state.dev_triangle_buffer_locs;
+                optix_params.normal_buffer_locations = (float3**)pt_state.dev_normal_buffer_locs;
+                optix_params.uv_buffer_locations = (float2**)pt_state.dev_uv_buffer_locs;
                 optix_params.direct_light_sampling = PathTracerOptions::Get()->direct_light_sampling;
                 optix_params.envmap_sampling = PathTracerOptions::Get()->environment_map_importance_sampling;
-                cudaMemcpy(reinterpret_cast<void*>(d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
+                cudaMemcpy(reinterpret_cast<void*>(pt_state.d_optix_paramters), &optix_params, sizeof(Params), cudaMemcpyHostToDevice);
                 OPTIX_CHECK(
-                    optixLaunch(hst_scene->optix_pipeline, 0, d_optix_paramters, sizeof(Params), &hst_scene->optix_sbt, num_paths, 1, 1);
+                    optixLaunch(pt_state.hst_scene->optix_pipeline, 0, pt_state.d_optix_paramters, sizeof(Params), &pt_state.hst_scene->optix_sbt, num_paths, 1, 1);
                 );
                 // fmt::println("OptixTrace Iteration {}", iter);
                 // end of optix magic
@@ -1102,8 +238,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             #if MATERIAL_SORTING
                 thrust::sort_by_key(
                     thrust::device,
-                    dev_intersections,
-                    dev_intersections + num_paths,
+                    pt_state.dev_intersections,
+                    pt_state.dev_intersections + num_paths,
                     dev_paths_sorted,
                     sort_materials()
                 );
@@ -1115,23 +251,23 @@ void pathtrace(uchar4* pbo, int frame, int iter)
                 iter,
                 num_paths,
                 dev_paths_sorted,
-                dev_materials,
-                dev_intersections,
-                dev_direct_light_intersections,
-                dev_environment_map_intersections,
+                pt_state.dev_materials,
+                pt_state.dev_intersections,
+                pt_state.dev_direct_light_intersections,
+                pt_state.dev_environment_map_intersections,
                 depth,
-                !hst_scene->exr_data.empty(),
-                exr_texture,
+                !pt_state.hst_scene->exr_data.empty(),
+                pt_state.exr_texture,
                 TextureHandler::get().dev_textures,
-                hst_scene->emissive_geoms.size(),
-                dev_emissive_geoms,
-                dev_emissive_geom_area_prefix,
-                dev_geoms,
-                hst_scene->total_emissive_mesh_area,
-                dev_hdri_marginal_cdf,
-                dev_hdri_conditional_cdfs,
-                hst_scene->exr_width,
-                hst_scene->exr_height
+                pt_state.hst_scene->emissive_geoms.size(),
+                pt_state.dev_emissive_geoms,
+                pt_state.dev_emissive_geom_area_prefix,
+                pt_state.dev_geoms,
+                pt_state.hst_scene->total_emissive_mesh_area,
+                pt_state.dev_hdri_marginal_cdf,
+                pt_state.dev_hdri_conditional_cdfs,
+                pt_state.hst_scene->exr_width,
+                pt_state.hst_scene->exr_height
             );
 
             CUDA_TIMER_RECORD(cudaTimer, "Shade Path, Iter {}", depth);
@@ -1152,9 +288,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             }
         #endif
 
-        if (guiData != NULL)
+        if (pt_state.guiData != NULL)
         {
-            guiData->TracedDepth = depth;
+            pt_state.guiData->TracedDepth = depth;
         }
 
         if (num_paths == 0) {
@@ -1175,24 +311,13 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     cudaTimer.clean();
 
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths_sorted);
+    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, pt_state.dev_image, dev_paths_sorted);
 
     ///////////////////////////////////////////////////////////////////////////
 
     // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, float(iter), dev_image);
+    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, float(iter), pt_state.dev_image);
 
     checkCUDAError("pathtrace");
 }
 
-// Retrieve image from GPU
-void copyImageToHost()
-{
-    const Camera& cam = hst_scene->state.camera;
-    const int pixelcount = cam.resolution.x * cam.resolution.y;
-
-    cudaMemcpy(hst_scene->state.image.data(), dev_image,
-        pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-
-    checkCUDAError("copyImageToHost");
-}

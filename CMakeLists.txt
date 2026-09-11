@@ -47,7 +47,7 @@ set(GLM_ROOT_DIR "${CMAKE_SOURCE_DIR}/external")
 find_package(GLM REQUIRED)
 include_directories(${GLM_INCLUDE_DIRS})
 
-file(GLOB_RECURSE sources 
+file(GLOB_RECURSE sources CONFIGURE_DEPENDS
     "src/*.cpp" 
     "src/*.cu"
 )
@@ -130,6 +130,8 @@ find_path(OptiX_INCLUDE
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE include)
+
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE 
     ${OptiX_INCLUDE}
